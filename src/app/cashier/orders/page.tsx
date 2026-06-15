@@ -1,4 +1,11 @@
-import { Banknote, Clock, CreditCard, ReceiptText } from "lucide-react";
+import Link from "next/link";
+import {
+  Banknote,
+  Clock,
+  CreditCard,
+  ReceiptText,
+  ShoppingBag,
+} from "lucide-react";
 
 import { connectDB } from "@/lib/mongodb";
 
@@ -9,6 +16,8 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import CashierPaymentManager from "@/components/cashier/CashierPaymentManager";
+
+export const dynamic = "force-dynamic";
 
 async function getCashierPaymentData() {
   await connectDB();
@@ -48,6 +57,20 @@ function formatCurrency(amount: number) {
   return `Rs. ${Number(amount || 0).toLocaleString("en-US")}`;
 }
 
+function isToday(dateValue?: string | Date | null) {
+  if (!dateValue) return false;
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const today = new Date();
+
+  return date.toDateString() === today.toDateString();
+}
+
 export default async function CashierOrdersPage() {
   const { unpaidOrders, payments } = await getCashierPaymentData();
 
@@ -56,12 +79,9 @@ export default async function CashierOrdersPage() {
     0
   );
 
-  const today = new Date();
-
-  const todayPayments = payments.filter((payment: any) => {
-    const paidAt = new Date(payment.paidAt || payment.createdAt);
-    return paidAt.toDateString() === today.toDateString();
-  });
+  const todayPayments = payments.filter((payment: any) =>
+    isToday(payment.paidAt || payment.createdAt)
+  );
 
   const todayCollection = todayPayments.reduce(
     (sum: number, payment: any) => sum + Number(payment.amount || 0),
@@ -76,25 +96,46 @@ export default async function CashierOrdersPage() {
     (payment: any) => payment.method === "CARD" || payment.method === "ONLINE"
   ).length;
 
+  const takeawayUnpaidOrders = unpaidOrders.filter(
+    (order: any) => order.orderType === "TAKE_AWAY"
+  ).length;
+
+  const dineInUnpaidOrders = unpaidOrders.filter(
+    (order: any) => order.orderType !== "TAKE_AWAY"
+  ).length;
+
   return (
     <main className="min-h-screen bg-[#0B0F14] px-4 py-6 text-white md:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-6">
-          <p className="text-sm font-medium text-emerald-300">
-            Cashier Workspace
-          </p>
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+            <div>
+              <p className="text-sm font-medium text-emerald-300">
+                Cashier Workspace
+              </p>
 
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Payments and billing
-          </h1>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+                Payments and billing
+              </h1>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-            Settle unpaid customer orders, record payment methods and review
-            recent payment history from the cashier workspace.
-          </p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
+                Settle unpaid dine-in and takeaway orders, record payment
+                methods and review recent payment history from the cashier
+                workspace.
+              </p>
+            </div>
+
+            <Link
+              href="/cashier/takeaway"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200"
+            >
+              <ShoppingBag size={18} />
+              Create Takeaway
+            </Link>
+          </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-5">
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-300">
               <ReceiptText size={21} />
@@ -104,6 +145,10 @@ export default async function CashierOrdersPage() {
             <h3 className="mt-2 text-3xl font-semibold text-amber-300">
               {unpaidOrders.length}
             </h3>
+
+            <p className="mt-2 text-xs text-neutral-500">
+              Dine-in {dineInUnpaidOrders} / Takeaway {takeawayUnpaidOrders}
+            </p>
           </div>
 
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
@@ -144,6 +189,21 @@ export default async function CashierOrdersPage() {
 
             <p className="mt-2 text-xs text-neutral-500">
               Payments settled today
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-300">
+              <ShoppingBag size={21} />
+            </div>
+
+            <p className="text-sm text-neutral-500">Takeaway Due</p>
+            <h3 className="mt-2 text-3xl font-semibold text-purple-300">
+              {takeawayUnpaidOrders}
+            </h3>
+
+            <p className="mt-2 text-xs text-neutral-500">
+              Counter pickup orders
             </p>
           </div>
         </section>
