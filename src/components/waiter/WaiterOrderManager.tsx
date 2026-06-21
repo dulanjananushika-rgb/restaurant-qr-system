@@ -4,13 +4,15 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   HandPlatter,
   History,
   Loader2,
   ReceiptText,
   RefreshCw,
-  Timer,
+  ShoppingBag,
   Truck,
   Utensils,
 } from "lucide-react";
@@ -62,7 +64,8 @@ type StatusHistoryItem = {
 
 type Order = {
   _id: string;
-  table?: TableData;
+  table?: TableData | null;
+  orderType?: "DINE_IN" | "TAKE_AWAY" | "ONLINE";
   customerName?: string;
   customerPhone?: string;
   items: OrderItem[];
@@ -94,6 +97,29 @@ function statusClass(status: string) {
   return "border-white/10 bg-white/[0.04] text-neutral-300";
 }
 
+function orderTypeClass(orderType?: string) {
+  if (orderType === "TAKE_AWAY") {
+    return "border-purple-500/20 bg-purple-500/10 text-purple-300";
+  }
+
+  return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+}
+
+function getOrderTypeLabel(orderType?: string) {
+  if (orderType === "TAKE_AWAY") return "TAKEAWAY";
+  if (orderType === "ONLINE") return "ONLINE";
+
+  return "DINE-IN";
+}
+
+function getOrderLocation(order: Order) {
+  if (order.orderType === "TAKE_AWAY") {
+    return "Counter pickup";
+  }
+
+  return order.table?.name || "No table";
+}
+
 function getNextAction(status: string) {
   if (status === "READY") {
     return {
@@ -116,16 +142,29 @@ function getNextAction(status: string) {
 
 function formatDateTime(date?: string | null) {
   if (!date) return "Not set";
-  return new Date(date).toLocaleString();
+
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return "Invalid date";
+  }
+
+  return parsedDate.toLocaleString();
 }
 
 function getElapsedMinutes(fromDate?: string | null, toDate?: string | null) {
   if (!fromDate) return null;
 
   const start = new Date(fromDate).getTime();
+
+  if (Number.isNaN(start)) return null;
+
   const end = toDate ? new Date(toDate).getTime() : Date.now();
 
+  if (Number.isNaN(end)) return null;
+
   const diffMs = Math.max(end - start, 0);
+
   return Math.floor(diffMs / 60000);
 }
 
@@ -133,11 +172,13 @@ function getElapsedText(minutes: number | null) {
   if (minutes === null) return "Not started";
   if (minutes < 1) return "Less than 1 min";
   if (minutes === 1) return "1 min";
+
   return `${minutes} mins`;
 }
 
 function getDelayLevel(order: Order) {
   const pickupWaitingMinutes = getElapsedMinutes(order.readyAt, order.pickedUpAt);
+
   const deliveryWaitingMinutes = getElapsedMinutes(
     order.pickedUpAt,
     order.deliveredAt
@@ -158,11 +199,11 @@ function getDelayLevel(order: Order) {
 
 function delayCardClass(delayLevel: string) {
   if (delayLevel === "CRITICAL") {
-    return "border-red-500/40 bg-red-500/[0.08] shadow-red-950/30";
+    return "border-red-500/40 bg-red-500/[0.08]";
   }
 
   if (delayLevel === "WARNING") {
-    return "border-amber-500/40 bg-amber-500/[0.08] shadow-amber-950/20";
+    return "border-amber-500/40 bg-amber-500/[0.08]";
   }
 
   return "border-white/10 bg-white/[0.03]";
@@ -178,6 +219,9 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>(
+    {}
+  );
 
   useEffect(() => {
     if (!autoRefreshEnabled) return;
@@ -191,8 +235,16 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
 
   const filteredOrders = useMemo(() => {
     if (filter === "ALL") return orders;
+
     return orders.filter((order) => order.status === filter);
   }, [orders, filter]);
+
+  function toggleDetails(orderId: string) {
+    setExpandedOrders((current) => ({
+      ...current,
+      [orderId]: !current[orderId],
+    }));
+  }
 
   async function updateWaiterStatus(orderId: string, status: string) {
     setError("");
@@ -231,7 +283,7 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {error && (
         <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
@@ -246,8 +298,8 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
           </div>
 
           <p className="mt-1 text-xs text-neutral-500">
-            Orders auto refresh every 5 seconds. Delayed pickup and delivery
-            orders are highlighted.
+            Simple delivery view. Extra time and history details are inside View
+            Details.
           </p>
         </div>
 
@@ -281,11 +333,12 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
         ))}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
+      <section className="grid gap-4 xl:grid-cols-2">
         {filteredOrders.map((order) => {
           const nextAction = getNextAction(order.status);
           const ActionIcon = nextAction?.icon;
           const delayLevel = getDelayLevel(order);
+          const isExpanded = expandedOrders[order._id] || false;
 
           const pickupWaitingMinutes = getElapsedMinutes(
             order.readyAt,
@@ -300,14 +353,14 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
           return (
             <article
               key={order._id}
-              className={`rounded-[30px] border p-5 shadow-2xl transition ${delayCardClass(
+              className={`rounded-[26px] border p-5 transition ${delayCardClass(
                 delayLevel
               )}`}
             >
               <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-semibold">
+                    <h2 className="text-lg font-semibold">
                       Order #{order._id.slice(-6).toUpperCase()}
                     </h2>
 
@@ -317,6 +370,14 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                       )}`}
                     >
                       {order.status}
+                    </span>
+
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-medium ${orderTypeClass(
+                        order.orderType
+                      )}`}
+                    >
+                      {getOrderTypeLabel(order.orderType)}
                     </span>
 
                     {delayLevel !== "NORMAL" && (
@@ -333,51 +394,39 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                     )}
                   </div>
 
-                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-neutral-500">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock size={13} />
-                      {new Date(order.createdAt).toLocaleString()}
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-neutral-400">
+                    <span className="inline-flex items-center gap-2">
+                      {order.orderType === "TAKE_AWAY" ? (
+                        <ShoppingBag size={16} className="text-purple-300" />
+                      ) : (
+                        <Utensils size={16} className="text-emerald-300" />
+                      )}
+
+                      {getOrderLocation(order)}
                     </span>
 
                     <span>{order.paymentType}</span>
+
                     <span>{order.paymentStatus}</span>
                   </div>
 
                   {(order.customerName || order.customerPhone) && (
                     <p className="mt-2 text-sm text-neutral-400">
-                      Customer: {order.customerName || "N/A"}{" "}
-                      {order.customerPhone ? `• ${order.customerPhone}` : ""}
+                      Customer: {order.customerName || "N/A"}
+                      {order.customerPhone ? ` • ${order.customerPhone}` : ""}
                     </p>
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-4">
-                  <p className="text-xs text-neutral-400">Deliver to</p>
-                  <p className="mt-1 text-2xl font-black text-emerald-300">
-                    {order.table?.name || "No table"}
+                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-left sm:text-right">
+                  <p className="text-xs text-neutral-400">
+                    {order.orderType === "TAKE_AWAY"
+                      ? "Pickup from"
+                      : "Deliver to"}
                   </p>
-                </div>
-              </div>
 
-              <div className="mt-5 grid gap-3 md:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-xs text-neutral-500">Ready Time</p>
-                  <p className="mt-1 text-xs font-medium text-neutral-300">
-                    {formatDateTime(order.readyAt)}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-xs text-neutral-500">Pickup Waiting</p>
-                  <p className="mt-1 text-xs font-medium text-neutral-300">
-                    {getElapsedText(pickupWaitingMinutes)}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-xs text-neutral-500">Delivery Waiting</p>
-                  <p className="mt-1 text-xs font-medium text-neutral-300">
-                    {getElapsedText(deliveryWaitingMinutes)}
+                  <p className="mt-1 text-xl font-black text-emerald-300">
+                    {getOrderLocation(order)}
                   </p>
                 </div>
               </div>
@@ -393,16 +442,15 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                     {order.items?.map((item) => (
                       <div
                         key={item._id}
-                        className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                        className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm">
-                            {item.menuItem?.name || "Menu item"}
-                          </p>
-                          <p className="text-sm font-semibold">
-                            × {item.quantity}
-                          </p>
-                        </div>
+                        <p className="text-sm">
+                          {item.menuItem?.name || "Menu item"}
+                        </p>
+
+                        <p className="text-sm font-semibold">
+                          × {item.quantity}
+                        </p>
                       </div>
                     ))}
 
@@ -426,13 +474,15 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                         key={combo._id}
                         className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"
                       >
-                        <p className="text-sm font-semibold text-emerald-100">
-                          {combo.comboOffer?.name || "Combo offer"}
-                        </p>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-emerald-100">
+                            {combo.comboOffer?.name || "Combo offer"}
+                          </p>
 
-                        <p className="mt-1 text-xs text-neutral-400">
-                          Combo × {combo.quantity}
-                        </p>
+                          <p className="text-sm font-semibold">
+                            × {combo.quantity}
+                          </p>
+                        </div>
 
                         <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
                           {combo.comboItemsSnapshot?.map((snapshot, index) => (
@@ -457,74 +507,109 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                 </section>
               </div>
 
-              <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Timer size={17} className="text-purple-300" />
-                  <h3 className="text-sm font-semibold">Service Times</h3>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-                    <p className="text-xs text-neutral-500">Picked Up</p>
-                    <p className="mt-1 text-xs text-neutral-300">
-                      {formatDateTime(order.pickedUpAt)}
-                    </p>
+              {isExpanded && (
+                <section className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-4 flex items-center gap-2">
+                    <Clock size={17} className="text-sky-300" />
+                    <h3 className="text-sm font-semibold">Delivery Details</h3>
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-                    <p className="text-xs text-neutral-500">Delivered</p>
-                    <p className="mt-1 text-xs text-neutral-300">
-                      {formatDateTime(order.deliveredAt)}
-                    </p>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <p className="text-xs text-neutral-500">Created</p>
+                      <p className="mt-1 text-xs text-neutral-300">
+                        {formatDateTime(order.createdAt)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <p className="text-xs text-neutral-500">Ready Time</p>
+                      <p className="mt-1 text-xs text-neutral-300">
+                        {formatDateTime(order.readyAt)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <p className="text-xs text-neutral-500">Pickup Waiting</p>
+                      <p className="mt-1 text-xs text-neutral-300">
+                        {getElapsedText(pickupWaitingMinutes)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <p className="text-xs text-neutral-500">Picked Up</p>
+                      <p className="mt-1 text-xs text-neutral-300">
+                        {formatDateTime(order.pickedUpAt)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <p className="text-xs text-neutral-500">
+                        Delivery Waiting
+                      </p>
+                      <p className="mt-1 text-xs text-neutral-300">
+                        {getElapsedText(deliveryWaitingMinutes)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <p className="text-xs text-neutral-500">Delivered</p>
+                      <p className="mt-1 text-xs text-neutral-300">
+                        {formatDateTime(order.deliveredAt)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <History size={17} className="text-sky-300" />
-                  <h3 className="text-sm font-semibold">Status History</h3>
-                </div>
+                  <div className="mt-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <History size={17} className="text-sky-300" />
+                      <h3 className="text-sm font-semibold">Status History</h3>
+                    </div>
 
-                <div className="space-y-2">
-                  {order.statusHistory && order.statusHistory.length > 0 ? (
-                    order.statusHistory
-                      .slice()
-                      .reverse()
-                      .map((history, index) => (
-                        <div
-                          key={history._id || `${order._id}-history-${index}`}
-                          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
-                        >
-                          <p className="text-xs text-neutral-300">
-                            {history.fromStatus || "START"} →{" "}
-                            <span className="font-semibold text-emerald-300">
-                              {history.toStatus}
-                            </span>
-                          </p>
+                    <div className="space-y-2">
+                      {order.statusHistory && order.statusHistory.length > 0 ? (
+                        order.statusHistory
+                          .slice()
+                          .reverse()
+                          .map((history, index) => (
+                            <div
+                              key={
+                                history._id ||
+                                `${order._id}-history-${index}`
+                              }
+                              className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                            >
+                              <p className="text-xs text-neutral-300">
+                                {history.fromStatus || "START"} →{" "}
+                                <span className="font-semibold text-emerald-300">
+                                  {history.toStatus}
+                                </span>
+                              </p>
 
-                          <p className="mt-1 text-[11px] text-neutral-500">
-                            By {history.changedByName || "System"}{" "}
-                            {history.changedByRole
-                              ? `(${history.changedByRole})`
-                              : ""}{" "}
-                            • {new Date(history.changedAt).toLocaleString()}
-                          </p>
+                              <p className="mt-1 text-[11px] text-neutral-500">
+                                By {history.changedByName || "System"}{" "}
+                                {history.changedByRole
+                                  ? `(${history.changedByRole})`
+                                  : ""}{" "}
+                                • {formatDateTime(history.changedAt)}
+                              </p>
 
-                          {history.note && (
-                            <p className="mt-2 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-neutral-400">
-                              Note: {history.note}
-                            </p>
-                          )}
-                        </div>
-                      ))
-                  ) : (
-                    <p className="text-sm text-neutral-500">
-                      No status history yet.
-                    </p>
-                  )}
-                </div>
-              </div>
+                              {history.note && (
+                                <p className="mt-2 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-neutral-400">
+                                  Note: {history.note}
+                                </p>
+                              )}
+                            </div>
+                          ))
+                      ) : (
+                        <p className="text-sm text-neutral-500">
+                          No status history yet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
 
               <div className="mt-5 space-y-3">
                 {nextAction && (
@@ -547,37 +632,52 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                   </label>
                 )}
 
-                {nextAction && ActionIcon ? (
+                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                  {nextAction && ActionIcon ? (
+                    <button
+                      type="button"
+                      disabled={updatingOrderId === order._id}
+                      onClick={() =>
+                        updateWaiterStatus(order._id, nextAction.nextStatus)
+                      }
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {updatingOrderId === order._id ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <ActionIcon size={18} />
+                      )}
+
+                      {updatingOrderId === order._id
+                        ? "Updating..."
+                        : nextAction.label}
+                    </button>
+                  ) : (
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-center text-sm font-medium text-emerald-300">
+                      Delivered to customer
+                    </div>
+                  )}
+
                   <button
                     type="button"
-                    disabled={updatingOrderId === order._id}
-                    onClick={() =>
-                      updateWaiterStatus(order._id, nextAction.nextStatus)
-                    }
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => toggleDetails(order._id)}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-neutral-300 transition hover:bg-white/10 hover:text-white"
                   >
-                    {updatingOrderId === order._id ? (
-                      <Loader2 size={18} className="animate-spin" />
+                    {isExpanded ? (
+                      <ChevronUp size={17} />
                     ) : (
-                      <ActionIcon size={18} />
+                      <ChevronDown size={17} />
                     )}
-
-                    {updatingOrderId === order._id
-                      ? "Updating..."
-                      : nextAction.label}
+                    {isExpanded ? "Hide Details" : "View Details"}
                   </button>
-                ) : (
-                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-center text-sm font-medium text-emerald-300">
-                    Delivered to customer
-                  </div>
-                )}
+                </div>
               </div>
             </article>
           );
         })}
 
         {filteredOrders.length === 0 && (
-          <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-10 text-center xl:col-span-2">
+          <div className="rounded-[26px] border border-white/10 bg-white/[0.03] p-10 text-center xl:col-span-2">
             <HandPlatter className="mx-auto mb-3 text-neutral-600" size={42} />
             <p className="text-sm text-neutral-500">
               No waiter orders for this filter.
