@@ -1,8 +1,11 @@
 
 import AddMenuItemForm from "@/components/admin/AddMenuItemForm";
+import { getAppUrl } from "@/lib/appUrl";
 
 async function getCategories() {
-  const res = await fetch("http://localhost:3000/api/admin/categories", {
+  const appUrl = getAppUrl();
+
+  const res = await fetch(`${appUrl}/api/admin/categories`, {
     cache: "no-store",
   });
 

@@ -1,7 +1,7 @@
 import { Armchair, QrCode, Users } from "lucide-react";
 import AddTableForm from "@/components/admin/AddTableForm";
 import TableQRCode from "@/components/admin/TableQRCode";
-
+import { getAppUrl } from "@/lib/appUrl";
 type RestaurantTable = {
   _id: string;
   name: string;
@@ -12,7 +12,9 @@ type RestaurantTable = {
 };
 
 async function getTables() {
-  const res = await fetch("http://localhost:3000/api/admin/tables", {
+  const appUrl = getAppUrl();
+
+  const res = await fetch(`${appUrl}/api/admin/tables`, {
     cache: "no-store",
   });
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Plus, Search, Utensils } from "lucide-react";
+import { getAppUrl } from "@/lib/appUrl";
 
 type Category = {
   _id: string;
@@ -18,7 +19,9 @@ type MenuItem = {
 };
 
 async function getMenuItems() {
-  const res = await fetch("http://localhost:3000/api/admin/menu", {
+  const appUrl = getAppUrl();
+
+  const res = await fetch(`${appUrl}/api/admin/menu`, {
     cache: "no-store",
   });
 
