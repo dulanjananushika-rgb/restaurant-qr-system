@@ -8,6 +8,10 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import KitchenOrderManager from "@/components/kitchen/KitchenOrderManager";
+import LogoutButton from "@/components/auth/LogoutButton";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 async function getKitchenOrders() {
   await connectDB();
@@ -49,21 +53,27 @@ export default async function KitchenOrdersPage() {
     <main className="min-h-screen bg-[#0B0F14] px-4 py-6 text-white md:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.18),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-6">
-          <p className="text-sm font-medium text-orange-300">
-            Kitchen Workspace
-          </p>
+  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+    <div>
+      <p className="text-sm font-medium text-orange-300">
+        Kitchen Workspace
+      </p>
 
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Prepare customer orders
-          </h1>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+        Prepare customer orders
+      </h1>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-            View incoming QR orders, accept them from the kitchen screen, start
-            preparation and mark dishes as ready for waiter pickup.
-          </p>
-        </section>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
+        View incoming QR and takeaway orders, accept them from the kitchen
+        screen, start preparation and mark dishes as ready for pickup.
+      </p>
+    </div>
 
-        <section className="grid gap-4 md:grid-cols-5">
+    <LogoutButton />
+  </div>
+</section>
+
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-300">
               <ChefHat size={21} />

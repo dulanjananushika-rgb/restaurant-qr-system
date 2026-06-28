@@ -7,6 +7,9 @@ import Order from "@/models/Order";
 import "@/models/Table";
 import "@/models/User";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 type RouteParams = {
   params: Promise<{
     id: string;
@@ -27,6 +30,9 @@ function isValidKitchenTransition(currentStatus: string, nextStatus: string) {
     ACCEPTED: ["PREPARING"],
     PREPARING: ["READY"],
     READY: [],
+    PICKED_UP: [],
+    DELIVERED: [],
+    CANCELLED: [],
   };
 
   return transitions[currentStatus]?.includes(nextStatus) || false;
@@ -96,7 +102,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         {
           success: false,
-          message: `Cannot change order from ${orderDoc.status} to ${status}`,
+          message: `This order is already ${orderDoc.status}. Please refresh the kitchen screen.`,
         },
         { status: 400 }
       );
@@ -134,10 +140,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     await orderDoc.save();
 
-    const tableName =
-      orderDoc.table && typeof orderDoc.table === "object" && orderDoc.table.name
-        ? String(orderDoc.table.name)
-        : "Unknown table";
+    const orderLocation =
+      orderDoc.orderType === "TAKE_AWAY"
+        ? "Counter pickup"
+        : orderDoc.table &&
+            typeof orderDoc.table === "object" &&
+            orderDoc.table.name
+          ? String(orderDoc.table.name)
+          : "Unknown table";
 
     await createAuditLog({
       action: "KITCHEN_ORDER_UPDATED",
@@ -145,19 +155,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       description: `${authUser.name} changed Order #${orderDoc._id
         .toString()
         .slice(-6)
-        .toUpperCase()} for ${tableName} from ${previousStatus} to ${status}.`,
+        .toUpperCase()} for ${orderLocation} from ${previousStatus} to ${status}.`,
+      performedBy: authUser.name,
+      metadata: {
+        orderId: orderDoc._id.toString(),
+        fromStatus: previousStatus,
+        toStatus: status,
+        orderType: orderDoc.orderType || "DINE_IN",
+      },
     });
-    await createAuditLog({
-  action: "PAYMENT_SETTLED",
-  module: "CASHIER",
-  description: "...",
-  performedBy: authUser.name,
-});
 
     return NextResponse.json({
       success: true,
       message: "Kitchen order updated successfully",
-      data: JSON.parse(JSON.stringify(orderDoc)),
+      data: {
+        orderId: orderDoc._id.toString(),
+        status: orderDoc.status,
+      },
     });
   } catch (error) {
     console.error("Kitchen order PATCH error:", error);

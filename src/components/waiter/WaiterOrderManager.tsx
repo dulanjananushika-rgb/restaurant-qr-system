@@ -102,13 +102,16 @@ function orderTypeClass(orderType?: string) {
     return "border-purple-500/20 bg-purple-500/10 text-purple-300";
   }
 
+  if (orderType === "ONLINE") {
+    return "border-sky-500/20 bg-sky-500/10 text-sky-300";
+  }
+
   return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
 }
 
 function getOrderTypeLabel(orderType?: string) {
   if (orderType === "TAKE_AWAY") return "TAKEAWAY";
   if (orderType === "ONLINE") return "ONLINE";
-
   return "DINE-IN";
 }
 
@@ -298,8 +301,8 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
           </div>
 
           <p className="mt-1 text-xs text-neutral-500">
-            Simple delivery view. Extra time and history details are inside View
-            Details.
+            Clean delivery view. Time tracking and history are available under
+            View Details.
           </p>
         </div>
 
@@ -333,7 +336,7 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
         ))}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <section className="grid items-stretch gap-4 xl:grid-cols-2">
         {filteredOrders.map((order) => {
           const nextAction = getNextAction(order.status);
           const ActionIcon = nextAction?.icon;
@@ -353,7 +356,7 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
           return (
             <article
               key={order._id}
-              className={`rounded-[26px] border p-5 transition ${delayCardClass(
+              className={`flex h-full min-h-[620px] flex-col rounded-[26px] border p-5 transition ${delayCardClass(
                 delayLevel
               )}`}
             >
@@ -406,7 +409,6 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                     </span>
 
                     <span>{order.paymentType}</span>
-
                     <span>{order.paymentStatus}</span>
                   </div>
 
@@ -418,68 +420,82 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-left sm:text-right">
+                <div className="shrink-0 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-left sm:w-44 sm:text-right">
                   <p className="text-xs text-neutral-400">
                     {order.orderType === "TAKE_AWAY"
                       ? "Pickup from"
                       : "Deliver to"}
                   </p>
 
-                  <p className="mt-1 text-xl font-black text-emerald-300">
+                  <p className="mt-1 break-words text-xl font-black text-emerald-300">
                     {getOrderLocation(order)}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <Utensils size={17} className="text-emerald-300" />
-                    <h3 className="text-sm font-semibold">Menu Items</h3>
+              <div className="mt-5 grid flex-1 gap-4 lg:grid-cols-2">
+                <section className="flex min-h-[230px] flex-col rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Utensils size={17} className="text-emerald-300" />
+                      <h3 className="text-sm font-semibold">Menu Items</h3>
+                    </div>
+
+                    <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-neutral-400">
+                      {order.items?.length || 0}
+                    </span>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="max-h-[170px] space-y-2 overflow-y-auto pr-1">
                     {order.items?.map((item) => (
                       <div
                         key={item._id}
                         className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
                       >
-                        <p className="text-sm">
+                        <p className="line-clamp-2 text-sm">
                           {item.menuItem?.name || "Menu item"}
                         </p>
 
-                        <p className="text-sm font-semibold">
+                        <p className="shrink-0 text-sm font-semibold">
                           × {item.quantity}
                         </p>
                       </div>
                     ))}
 
                     {(!order.items || order.items.length === 0) && (
-                      <p className="text-sm text-neutral-500">
-                        No normal menu items.
-                      </p>
+                      <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 p-6 text-center">
+                        <p className="text-sm text-neutral-500">
+                          No normal menu items.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <ReceiptText size={17} className="text-amber-300" />
-                    <h3 className="text-sm font-semibold">Combo Items</h3>
+                <section className="flex min-h-[230px] flex-col rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <ReceiptText size={17} className="text-amber-300" />
+                      <h3 className="text-sm font-semibold">Combo Items</h3>
+                    </div>
+
+                    <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-neutral-400">
+                      {order.comboItems?.length || 0}
+                    </span>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="max-h-[170px] space-y-2 overflow-y-auto pr-1">
                     {order.comboItems?.map((combo) => (
                       <div
                         key={combo._id}
                         className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-emerald-100">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="line-clamp-2 text-sm font-semibold text-emerald-100">
                             {combo.comboOffer?.name || "Combo offer"}
                           </p>
 
-                          <p className="text-sm font-semibold">
+                          <p className="shrink-0 text-sm font-semibold">
                             × {combo.quantity}
                           </p>
                         </div>
@@ -488,7 +504,7 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                           {combo.comboItemsSnapshot?.map((snapshot, index) => (
                             <p
                               key={`${combo._id}-${index}`}
-                              className="text-xs text-neutral-400"
+                              className="line-clamp-1 text-xs text-neutral-400"
                             >
                               • {snapshot.name} ×{" "}
                               {snapshot.quantity * combo.quantity}
@@ -499,9 +515,11 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                     ))}
 
                     {(!order.comboItems || order.comboItems.length === 0) && (
-                      <p className="text-sm text-neutral-500">
-                        No combo items.
-                      </p>
+                      <div className="flex min-h-[118px] items-center justify-center rounded-xl border border-dashed border-white/10 p-6 text-center">
+                        <p className="text-sm text-neutral-500">
+                          No combo items.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </section>
@@ -566,7 +584,7 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                       <h3 className="text-sm font-semibold">Status History</h3>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="max-h-[220px] space-y-2 overflow-y-auto pr-1">
                       {order.statusHistory && order.statusHistory.length > 0 ? (
                         order.statusHistory
                           .slice()
@@ -611,9 +629,9 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                 </section>
               )}
 
-              <div className="mt-5 space-y-3">
+              <div className="mt-auto pt-5">
                 {nextAction && (
-                  <label className="block">
+                  <label className="mb-3 block">
                     <span className="mb-2 block text-xs text-neutral-500">
                       Waiter note optional
                     </span>
@@ -661,7 +679,7 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
                   <button
                     type="button"
                     onClick={() => toggleDetails(order._id)}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-neutral-300 transition hover:bg-white/10 hover:text-white"
+                    className="inline-flex min-w-[145px] items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-5 py-3 text-sm font-semibold text-neutral-300 transition hover:bg-white/10 hover:text-white"
                   >
                     {isExpanded ? (
                       <ChevronUp size={17} />

@@ -8,12 +8,11 @@ export async function POST() {
 
   response.cookies.set("restaurant_token", "", {
     httpOnly: true,
-    sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     path: "/",
     maxAge: 0,
   });
-  response.cookies.delete("restaurant_token");
 
   return response;
 }
