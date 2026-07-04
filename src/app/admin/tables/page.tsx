@@ -1,7 +1,13 @@
 import { Armchair, QrCode, Users } from "lucide-react";
+
 import AddTableForm from "@/components/admin/AddTableForm";
 import TableQRCode from "@/components/admin/TableQRCode";
+import TableActions from "@/components/admin/TableActions";
 import { getAppUrl } from "@/lib/appUrl";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type RestaurantTable = {
   _id: string;
   name: string;
@@ -56,8 +62,8 @@ export default async function AdminTablesPage() {
         </h1>
 
         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-          Create dining tables, generate unique QR scan links, and let customers
-          access the digital menu directly from their table.
+          Create dining tables, generate unique QR scan links, update table
+          details, and control table availability for restaurant operations.
         </p>
       </section>
 
@@ -67,6 +73,7 @@ export default async function AdminTablesPage() {
             <p className="text-sm text-neutral-500">Total Tables</p>
             <Armchair size={20} className="text-emerald-300" />
           </div>
+
           <h3 className="mt-3 text-3xl font-semibold">{tables.length}</h3>
         </div>
 
@@ -75,6 +82,7 @@ export default async function AdminTablesPage() {
             <p className="text-sm text-neutral-500">Available</p>
             <Users size={20} className="text-emerald-300" />
           </div>
+
           <h3 className="mt-3 text-3xl font-semibold text-emerald-300">
             {availableCount}
           </h3>
@@ -85,6 +93,7 @@ export default async function AdminTablesPage() {
             <p className="text-sm text-neutral-500">Occupied</p>
             <QrCode size={20} className="text-amber-300" />
           </div>
+
           <h3 className="mt-3 text-3xl font-semibold text-amber-300">
             {occupiedCount}
           </h3>
@@ -97,8 +106,10 @@ export default async function AdminTablesPage() {
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-5">
             <h2 className="text-lg font-semibold">Table QR Codes</h2>
+
             <p className="mt-1 text-sm text-neutral-500">
               Print or copy these QR links and place them on restaurant tables.
+              Use Edit to update table details or change operational status.
             </p>
           </div>
 
@@ -111,6 +122,7 @@ export default async function AdminTablesPage() {
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
                     <h3 className="text-lg font-semibold">{table.name}</h3>
+
                     <p className="mt-1 text-sm text-neutral-500">
                       Capacity: {table.capacity}
                     </p>
@@ -126,6 +138,8 @@ export default async function AdminTablesPage() {
                 </div>
 
                 <TableQRCode tableName={table.name} qrCode={table.qrCode} />
+
+                <TableActions table={table} />
               </div>
             ))}
 
