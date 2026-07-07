@@ -16,6 +16,7 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import CashierPaymentManager from "@/components/cashier/CashierPaymentManager";
+import LogoutButton from "@/components/auth/LogoutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,7 @@ export default async function CashierOrdersPage() {
   return (
     <main className="min-h-screen bg-[#0B0F14] px-4 py-6 text-white md:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
+        {/* Header with Logout Button */}
         <section className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-6">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div>
@@ -125,27 +127,30 @@ export default async function CashierOrdersPage() {
               </p>
             </div>
 
-            <Link
-              href="/cashier/takeaway"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200"
-            >
-              <ShoppingBag size={18} />
-              Create Takeaway
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/cashier/takeaway"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200"
+              >
+                <ShoppingBag size={18} />
+                Create Takeaway
+              </Link>
+
+              <LogoutButton />
+            </div>
           </div>
         </section>
 
+        {/* Stats Cards */}
         <section className="grid gap-4 md:grid-cols-5">
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-300">
               <ReceiptText size={21} />
             </div>
-
             <p className="text-sm text-neutral-500">Unpaid Orders</p>
             <h3 className="mt-2 text-3xl font-semibold text-amber-300">
               {unpaidOrders.length}
             </h3>
-
             <p className="mt-2 text-xs text-neutral-500">
               Dine-in {dineInUnpaidOrders} / Takeaway {takeawayUnpaidOrders}
             </p>
@@ -155,7 +160,6 @@ export default async function CashierOrdersPage() {
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-500/10 text-red-300">
               <Clock size={21} />
             </div>
-
             <p className="text-sm text-neutral-500">Amount Due</p>
             <h3 className="mt-2 text-3xl font-semibold text-red-300">
               {formatCurrency(totalUnpaidAmount)}
@@ -166,12 +170,10 @@ export default async function CashierOrdersPage() {
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
               <Banknote size={21} />
             </div>
-
             <p className="text-sm text-neutral-500">Today Collection</p>
             <h3 className="mt-2 text-3xl font-semibold text-emerald-300">
               {formatCurrency(todayCollection)}
             </h3>
-
             <p className="mt-2 text-xs text-neutral-500">
               Cash payments: {cashPaymentsToday}
             </p>
@@ -181,12 +183,10 @@ export default async function CashierOrdersPage() {
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-300">
               <CreditCard size={21} />
             </div>
-
             <p className="text-sm text-neutral-500">Card / Online</p>
             <h3 className="mt-2 text-3xl font-semibold text-sky-300">
               {cardOrOnlinePaymentsToday}
             </h3>
-
             <p className="mt-2 text-xs text-neutral-500">
               Payments settled today
             </p>
@@ -196,21 +196,19 @@ export default async function CashierOrdersPage() {
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-300">
               <ShoppingBag size={21} />
             </div>
-
             <p className="text-sm text-neutral-500">Takeaway Due</p>
             <h3 className="mt-2 text-3xl font-semibold text-purple-300">
               {takeawayUnpaidOrders}
             </h3>
-
             <p className="mt-2 text-xs text-neutral-500">
               Counter pickup orders
             </p>
           </div>
         </section>
 
-        <CashierPaymentManager
-          unpaidOrders={unpaidOrders}
-          payments={payments}
+        <CashierPaymentManager 
+          unpaidOrders={unpaidOrders} 
+          payments={payments} 
         />
       </div>
     </main>

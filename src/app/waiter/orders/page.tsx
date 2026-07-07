@@ -8,6 +8,7 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import WaiterOrderManager from "@/components/waiter/WaiterOrderManager";
+import LogoutButton from "@/components/auth/LogoutButton";
 
 async function getWaiterOrders() {
   await connectDB();
@@ -44,19 +45,26 @@ export default async function WaiterOrdersPage() {
   return (
     <main className="min-h-screen bg-[#0B0F14] px-4 py-6 text-white md:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
+        {/* Header with Logout Button */}
         <section className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-6">
-          <p className="text-sm font-medium text-emerald-300">
-            Waiter Workspace
-          </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-emerald-300">
+                Waiter Workspace
+              </p>
 
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Pickup and deliver table orders
-          </h1>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+                Pickup and deliver table orders
+              </h1>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-            View kitchen-ready orders, pick them up from the kitchen and mark
-            them as delivered after serving the customer.
-          </p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
+                View kitchen-ready orders, pick them up from the kitchen and mark
+                them as delivered after serving the customer.
+              </p>
+            </div>
+
+            <LogoutButton />
+          </div>
         </section>
 
         <section className="grid gap-4 md:grid-cols-4">
