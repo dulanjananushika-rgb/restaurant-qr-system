@@ -424,60 +424,59 @@ export default function CustomerMenuClient({
     );
   }
 
-  function startEditOrder() {
-    if (!activeOrder || activeOrder.status !== "PENDING") {
-      setError(
-        "Kitchen has already accepted this order. Please place a new order for extra items."
-      );
-      return;
-    }
-
-    if (activeOrder.paymentStatus === "PAID") {
-      setError(
-        "This order is already paid. Please place a new order for extra items."
-      );
-      return;
-    }
-
-    const editableCart: CartItem[] = [];
-
-    for (const orderItem of activeOrder.items || []) {
-      if (!orderItem.menuItem) continue;
-
-      editableCart.push({
-        id: orderItem.menuItem._id,
-        type: "MENU_ITEM",
-        name: orderItem.menuItem.name,
-        price: Number(orderItem.price || orderItem.menuItem.price || 0),
-        image: orderItem.menuItem.image,
-        quantity: Number(orderItem.quantity || 1),
-        menuItem: orderItem.menuItem,
-      });
-    }
-
-    for (const comboItem of activeOrder.comboItems || []) {
-      if (!comboItem.comboOffer) continue;
-
-      editableCart.push({
-        id: comboItem.comboOffer._id,
-        type: "COMBO",
-        name: comboItem.comboOffer.name,
-        price: Number(comboItem.price || comboItem.comboOffer.offerPrice || 0),
-        image: comboItem.comboOffer.image,
-        quantity: Number(comboItem.quantity || 1),
-        comboOffer: comboItem.comboOffer,
-      });
-    }
-
-    setCart(editableCart);
-    setCustomerName(activeOrder.customerName || "");
-    setCustomerPhone(activeOrder.customerPhone || "");
-    setPaymentType(activeOrder.paymentType || "PAY_LATER");
-    setEditMode(true);
-    setCheckoutOpen(true);
-    setError("");
+ function startEditOrder() {
+  if (!activeOrder || activeOrder.status !== "PENDING") {
+    setError(
+      "Kitchen has already accepted this order. Please place a new order for extra items."
+    );
+    return;
   }
 
+  if (activeOrder.paymentStatus === "PAID") {
+    setError(
+      "This order is already paid. Please place a new order for extra items."
+    );
+    return;
+  }
+
+  const editableCart: CartItem[] = [];
+
+  // Load existing items into cart
+  for (const orderItem of activeOrder.items || []) {
+    if (!orderItem.menuItem) continue;
+
+    editableCart.push({
+      id: orderItem.menuItem._id,
+      type: "MENU_ITEM",
+      name: orderItem.menuItem.name,
+      price: Number(orderItem.price || orderItem.menuItem.price || 0),
+      image: orderItem.menuItem.image,
+      quantity: Number(orderItem.quantity || 1),
+      menuItem: orderItem.menuItem,
+    });
+  }
+
+  for (const comboItem of activeOrder.comboItems || []) {
+    if (!comboItem.comboOffer) continue;
+
+    editableCart.push({
+      id: comboItem.comboOffer._id,
+      type: "COMBO",
+      name: comboItem.comboOffer.name,
+      price: Number(comboItem.price || comboItem.comboOffer.offerPrice || 0),
+      image: comboItem.comboOffer.image,
+      quantity: Number(comboItem.quantity || 1),
+      comboOffer: comboItem.comboOffer,
+    });
+  }
+
+  setCart(editableCart);
+  setCustomerName(activeOrder.customerName || "");
+  setCustomerPhone(activeOrder.customerPhone || "");
+  setPaymentType(activeOrder.paymentType || "PAY_LATER");
+  setEditMode(true);
+  setError("");
+}
   function clearCurrentOrderTracking() {
     localStorage.removeItem(getOrderStorageKey(table._id));
     setActiveOrder(null);
@@ -1096,7 +1095,7 @@ export default function CustomerMenuClient({
                 <div
                   key={`${item.type}-${item.id}`}
                   className="rounded-3xl border border-white/15 bg-white/10 p-4"
-                >
+                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-black">{item.name}</p>
@@ -1134,6 +1133,12 @@ export default function CustomerMenuClient({
                   </div>
                 </div>
               ))}
+              {/* Edit Mode Message - Add this block */}
+                {editMode && (
+                <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+                  You can still add more items from the menu while editing this order.
+                </div>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">

@@ -810,6 +810,12 @@ export default function CustomerMenu({
                   </div>
                 </div>
               ))}
+              {/* Edit Mode Message - Add this block */}
+{editMode && (
+  <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+    You can still add more items from the menu while editing this order.
+  </div>
+)}
 
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold">
