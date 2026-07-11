@@ -2,7 +2,7 @@ import { connectDB } from "@/lib/mongodb";
 import Category from "@/models/Category";
 import MenuItem from "@/models/MenuItem";
 import ComboOffer from "@/models/ComboOffer";
-import TakeawayMenuClient from "@/components/customer/TakeawayMenuClient";
+import TakeawayMenuClient from "../../components/customer/TakeawayMenuClient";
 
 export default async function TakeawayPage() {
   await connectDB();

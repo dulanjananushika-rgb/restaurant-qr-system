@@ -13,6 +13,7 @@ type PurchaseRequestItem = {
   unitCost: number;
 };
 
+// GET - All Purchases
 export async function GET() {
   try {
     await connectDB();
@@ -23,30 +24,21 @@ export async function GET() {
       .populate("items.inventoryItem")
       .lean();
 
-    return NextResponse.json({
-      success: true,
-      data: purchases,
-    });
+    return NextResponse.json({ success: true, data: purchases });
   } catch (error) {
-    console.error("Purchases GET error:", error);
-
     return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load purchases",
-        error: error instanceof Error ? error.message : String(error),
-      },
+      { success: false, message: "Failed to load purchases" },
       { status: 500 }
     );
   }
 }
 
+// POST - Create Purchase
 export async function POST(request: Request) {
   try {
     await connectDB();
 
     const body = await request.json();
-
     const {
       supplier,
       invoiceNumber = "",
@@ -54,75 +46,45 @@ export async function POST(request: Request) {
       items,
       paymentStatus = "UNPAID",
       note = "",
-    } = body as {
-      supplier: string;
-      invoiceNumber?: string;
-      purchaseDate?: string;
-      items: PurchaseRequestItem[];
-      paymentStatus?: "UNPAID" | "PAID" | "PARTIALLY_PAID";
-      note?: string;
-    };
+    } = body;
 
     if (!supplier) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Supplier is required",
-        },
+        { success: false, message: "Supplier is required" },
         { status: 400 }
       );
     }
 
     const supplierExists = await Supplier.findById(supplier);
-
     if (!supplierExists) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Supplier not found",
-        },
+        { success: false, message: "Supplier not found" },
         { status: 404 }
       );
     }
 
     if (supplierExists.status !== "ACTIVE") {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Selected supplier is inactive",
-        },
+        { success: false, message: "Selected supplier is inactive" },
         { status: 400 }
       );
     }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Please add at least one purchase item",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!["UNPAID", "PAID", "PARTIALLY_PAID"].includes(paymentStatus)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid payment status",
-        },
+        { success: false, message: "Please add at least one purchase item" },
         { status: 400 }
       );
     }
 
     const cleanedItems = items
       .filter(
-        (item) =>
+        (item: any) =>
           item.inventoryItem &&
           Number(item.quantity) > 0 &&
           Number(item.unitCost) >= 0
       )
-      .map((item) => ({
+      .map((item: any) => ({
         inventoryItem: item.inventoryItem,
         quantity: Number(item.quantity),
         unitCost: Number(item.unitCost),
@@ -130,38 +92,26 @@ export async function POST(request: Request) {
 
     if (cleanedItems.length === 0) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Please add valid inventory items, quantities and costs",
-        },
+        { success: false, message: "Please add valid purchase items" },
         { status: 400 }
       );
     }
 
     const inventoryIds = cleanedItems.map((item) => item.inventoryItem);
-
-    const inventoryItems = await InventoryItem.find({
-      _id: { $in: inventoryIds },
-    });
+    const inventoryItems = await InventoryItem.find({ _id: { $in: inventoryIds } });
 
     if (inventoryItems.length !== inventoryIds.length) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Some inventory items are invalid",
-        },
+        { success: false, message: "Some inventory items are invalid" },
         { status: 400 }
       );
     }
 
     const purchaseItems = cleanedItems.map((item) => {
       const inventoryItem = inventoryItems.find(
-        (inventory: any) => inventory._id.toString() === item.inventoryItem
+        (inv: any) => inv._id.toString() === item.inventoryItem
       );
-
-      if (!inventoryItem) {
-        throw new Error("Invalid inventory item");
-      }
+      if (!inventoryItem) throw new Error("Invalid inventory item");
 
       return {
         inventoryItem: inventoryItem._id,
@@ -186,17 +136,14 @@ export async function POST(request: Request) {
       note,
     });
 
+    // Update Stock + Create StockMovement
     const stockMovements = [];
 
     for (const purchaseItem of purchaseItems) {
       const inventoryItem = inventoryItems.find(
-        (inventory: any) =>
-          inventory._id.toString() === purchaseItem.inventoryItem.toString()
+        (inv: any) => inv._id.toString() === purchaseItem.inventoryItem.toString()
       );
-
-      if (!inventoryItem) {
-        throw new Error("Inventory item not found while updating stock");
-      }
+      if (!inventoryItem) continue;
 
       const previousQuantity = Number(inventoryItem.quantity);
       const newQuantity = previousQuantity + Number(purchaseItem.quantity);
@@ -211,10 +158,8 @@ export async function POST(request: Request) {
         quantity: Number(purchaseItem.quantity),
         previousQuantity,
         newQuantity,
-        reason: `Stock purchased from ${supplierExists.name}. Invoice: ${
-          invoiceNumber || "N/A"
-        }`,
-        referenceType: "SYSTEM",
+        reason: `Stock purchased from ${supplierExists.name}`,
+        referenceType: "PURCHASE",
         referenceId: purchase._id,
       });
     }
@@ -226,7 +171,7 @@ export async function POST(request: Request) {
     await createAuditLog({
       action: "PURCHASE_CREATED",
       module: "PURCHASES",
-      description: `Purchase created from ${supplierExists.name}. Total: Rs. ${totalAmount}. Items: ${purchaseItems.length}.`,
+      description: `Purchase created from ${supplierExists.name}. Total: Rs. ${totalAmount}`,
     });
 
     const populatedPurchase = await Purchase.findById(purchase._id)
@@ -234,23 +179,66 @@ export async function POST(request: Request) {
       .populate("items.inventoryItem")
       .lean();
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Purchase created successfully",
-        data: populatedPurchase,
-      },
-      { status: 201 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: "Purchase created successfully",
+      data: populatedPurchase,
+    });
   } catch (error) {
     console.error("Purchases POST error:", error);
-
     return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to create purchase",
-        error: error instanceof Error ? error.message : String(error),
-      },
+      { success: false, message: "Failed to create purchase" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH - Update Payment Status
+export async function PATCH(request: Request) {
+  try {
+    await connectDB();
+
+    const body = await request.json();
+    const { purchaseId, paymentStatus } = body;
+
+    if (!purchaseId || !paymentStatus) {
+      return NextResponse.json(
+        { success: false, message: "Purchase ID and payment status are required" },
+        { status: 400 }
+      );
+    }
+
+    const purchase = await Purchase.findById(purchaseId);
+    if (!purchase) {
+      return NextResponse.json(
+        { success: false, message: "Purchase not found" },
+        { status: 404 }
+      );
+    }
+
+    purchase.paymentStatus = paymentStatus;
+    await purchase.save();
+
+    await createAuditLog({
+      action: "PURCHASE_PAYMENT_UPDATED",
+      module: "PURCHASES",
+      description: `Payment status changed to ${paymentStatus} for purchase #${purchase._id.toString().slice(-6)}`,
+    });
+
+    const updatedPurchase = await Purchase.findById(purchaseId)
+      .populate("supplier")
+      .populate("items.inventoryItem")
+      .lean();
+
+    return NextResponse.json({
+      success: true,
+      message: "Payment status updated successfully",
+      data: updatedPurchase,
+    });
+  } catch (error) {
+    console.error("Purchase PATCH error:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to update payment status" },
       { status: 500 }
     );
   }

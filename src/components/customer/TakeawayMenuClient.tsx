@@ -23,13 +23,13 @@ export default function TakeawayMenuClient({
 
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  // Add item to cart
-  function addToCart(item: any, type: "MENU_ITEM" | "COMBO") {
+  // Add Menu Item
+  function addMenuItem(item: any) {
     setCart((current) => {
-      const existing = current.find((i) => i.id === item._id && i.type === type);
+      const existing = current.find((i) => i.id === item._id && i.type === "MENU_ITEM");
       if (existing) {
         return current.map((i) =>
-          i.id === item._id && i.type === type
+          i.id === item._id && i.type === "MENU_ITEM"
             ? { ...i, quantity: i.quantity + 1 }
             : i
         );
@@ -38,16 +38,40 @@ export default function TakeawayMenuClient({
         ...current,
         {
           id: item._id,
-          type,
+          type: "MENU_ITEM",
           name: item.name,
-          price: type === "COMBO" ? item.offerPrice : item.price,
+          price: item.price,
           quantity: 1,
         },
       ];
     });
   }
 
-  // Decrease quantity or remove item
+  // Add Combo Offer
+  function addCombo(combo: any) {
+    setCart((current) => {
+      const existing = current.find((i) => i.id === combo._id && i.type === "COMBO");
+      if (existing) {
+        return current.map((i) =>
+          i.id === combo._id && i.type === "COMBO"
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
+        );
+      }
+      return [
+        ...current,
+        {
+          id: combo._id,
+          type: "COMBO",
+          name: combo.name,
+          price: combo.offerPrice,
+          quantity: 1,
+        },
+      ];
+    });
+  }
+
+  // Decrease quantity
   function decreaseItem(id: string, type: "MENU_ITEM" | "COMBO") {
     setCart((current) =>
       current
@@ -124,23 +148,48 @@ export default function TakeawayMenuClient({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      {/* Menu Items */}
-      <div>
-        <h2 className="text-2xl font-bold mb-4">Menu Items</h2>
-        {menuItems.map((item: any) => (
-          <div key={item._id} className="flex justify-between items-center border-b border-white/10 py-3">
-            <div>
-              <p className="font-semibold">{item.name}</p>
-              <p className="text-sm text-white/60">Rs. {item.price}</p>
+      {/* Menu Items + Combos */}
+      <div className="space-y-8">
+        {/* Menu Items */}
+        <div>
+          <h2 className="text-2xl font-bold mb-4">Menu Items</h2>
+          {menuItems.map((item: any) => (
+            <div key={item._id} className="flex justify-between items-center border-b border-white/10 py-3">
+              <div>
+                <p className="font-semibold">{item.name}</p>
+                <p className="text-sm text-white/60">Rs. {item.price}</p>
+              </div>
+              <button
+                onClick={() => addMenuItem(item)}
+                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-xl text-sm font-bold transition"
+              >
+                Add
+              </button>
             </div>
-            <button
-              onClick={() => addToCart(item, "MENU_ITEM")}
-              className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-xl text-sm font-bold transition"
-            >
-              Add
-            </button>
+          ))}
+        </div>
+
+        {/* Combo Offers */}
+        {comboOffers.length > 0 && (
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Combo Offers</h2>
+            {comboOffers.map((combo: any) => (
+              <div key={combo._id} className="flex justify-between items-center border-b border-white/10 py-3">
+                <div>
+                  <p className="font-semibold">{combo.name}</p>
+                  <p className="text-sm text-white/60 line-through">Rs. {combo.originalPrice}</p>
+                  <p className="text-emerald-400 font-bold">Rs. {combo.offerPrice}</p>
+                </div>
+                <button
+                  onClick={() => addCombo(combo)}
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-xl text-sm font-bold transition"
+                >
+                  Add Combo
+                </button>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
       {/* Cart Section */}
@@ -159,14 +208,14 @@ export default function TakeawayMenuClient({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => decreaseItem(item.id, item.type)}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-lg"
               >
                 −
               </button>
               <span className="w-6 text-center font-bold">{item.quantity}</span>
               <button
                 onClick={() => increaseItem(item.id, item.type)}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-lg"
               >
                 +
               </button>
@@ -200,7 +249,7 @@ export default function TakeawayMenuClient({
                   paymentType === "PAY_LATER" ? "bg-emerald-500 text-black" : "bg-white/10"
                 }`}
               >
-                Pay Later
+                Pay Later (at counter)
               </button>
               <button
                 onClick={() => setPaymentType("PAY_NOW")}
@@ -208,7 +257,7 @@ export default function TakeawayMenuClient({
                   paymentType === "PAY_NOW" ? "bg-emerald-500 text-black" : "bg-white/10"
                 }`}
               >
-                Pay Now
+                Pay Now (Online)
               </button>
             </div>
           </div>

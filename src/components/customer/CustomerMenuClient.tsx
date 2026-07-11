@@ -705,7 +705,43 @@ export default function CustomerMenuClient({
                         <Edit3 size={14} />
                         Edit order
                       </button>
+                      
                     )}
+                    {/* Cancel Order Button - Only show when order is still PENDING */}
+{activeOrder.status === "PENDING" && (
+  <button
+    type="button"
+    onClick={async () => {
+      if (!confirm("Are you sure you want to cancel this order?")) return;
+
+      try {
+        const res = await fetch(`/api/public/orders/${activeOrderId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            editToken,
+            cancel: true,
+          }),
+        });
+
+        const result = await res.json();
+
+        if (result.success) {
+          alert("Order cancelled successfully");
+          clearCurrentOrderTracking();
+          router.refresh();
+        } else {
+          alert(result.message || "Failed to cancel order");
+        }
+      } catch {
+        alert("Error cancelling order");
+      }
+    }}
+    className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300"
+  >
+    Cancel Order
+  </button>
+)}
 
                     {activeOrder.paymentType === "PAY_NOW" &&
                       activeOrder.paymentStatus !== "PAID" && (

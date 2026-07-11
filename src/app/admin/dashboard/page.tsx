@@ -62,23 +62,15 @@ function statusBadge(status: string) {
   if (status === "PAID" || status === "READY" || status === "DELIVERED") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
   }
-
   if (status === "PENDING" || status === "UNPAID") {
     return "border-amber-500/20 bg-amber-500/10 text-amber-300";
   }
-
-  if (
-    status === "PREPARING" ||
-    status === "PICKED_UP" ||
-    status === "ACCEPTED"
-  ) {
+  if (status === "PREPARING" || status === "PICKED_UP" || status === "ACCEPTED") {
     return "border-sky-500/20 bg-sky-500/10 text-sky-300";
   }
-
   if (status === "CANCELLED" || status === "FAILED") {
     return "border-red-500/20 bg-red-500/10 text-red-300";
   }
-
   return "border-white/10 bg-white/5 text-neutral-300";
 }
 
@@ -87,7 +79,6 @@ async function getDashboardData() {
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
 
@@ -101,33 +92,20 @@ async function getDashboardData() {
     recentOrders,
   ] = await Promise.all([
     Order.find().populate("table").populate("items.menuItem").lean(),
-
-    Order.find({
-      createdAt: {
-        $gte: startOfToday,
-        $lte: endOfToday,
-      },
-    })
+    Order.find({ createdAt: { $gte: startOfToday, $lte: endOfToday } })
       .populate("table")
       .populate("items.menuItem")
       .lean(),
-
-    Order.find({
-      status: { $in: ["PENDING", "ACCEPTED", "PREPARING"] },
-    })
+    Order.find({ status: { $in: ["PENDING", "ACCEPTED", "PREPARING"] } })
       .sort({ createdAt: -1 })
       .populate("table")
       .populate("items.menuItem")
       .lean(),
-
-    Order.find({
-      status: "READY",
-    })
+    Order.find({ status: "READY" })
       .sort({ createdAt: -1 })
       .populate("table")
       .populate("items.menuItem")
       .lean(),
-
     Order.find({
       paymentStatus: { $in: ["UNPAID", "PENDING", "PARTIALLY_PAID"] },
       status: { $in: ["READY", "PICKED_UP", "DELIVERED"] },
@@ -136,19 +114,11 @@ async function getDashboardData() {
       .populate("table")
       .populate("items.menuItem")
       .lean(),
-
-    InventoryItem.find({
-      $expr: {
-        $lte: ["$quantity", "$minQuantity"],
-      },
-    })
+    InventoryItem.find({ $expr: { $lte: ["$quantity", "$minQuantity"] } })
       .sort({ quantity: 1 })
-      .limit(6)
+      .limit(8)
       .lean(),
-
-    Order.find()
-      .sort({ createdAt: -1 })
-      .limit(6)
+    Order.find().sort({ createdAt: -1 }).limit(6)
       .populate("table")
       .populate("items.menuItem")
       .lean(),
@@ -168,29 +138,18 @@ async function getDashboardData() {
     .reduce((sum: number, order: any) => sum + order.totalAmount, 0);
 
   const orderStatusCounts = {
-    pending: orders.filter((order: any) => order.status === "PENDING").length,
-    accepted: orders.filter((order: any) => order.status === "ACCEPTED").length,
-    preparing: orders.filter((order: any) => order.status === "PREPARING")
-      .length,
-    ready: orders.filter((order: any) => order.status === "READY").length,
-    delivered: orders.filter((order: any) => order.status === "DELIVERED")
-      .length,
+    pending: orders.filter((o: any) => o.status === "PENDING").length,
+    accepted: orders.filter((o: any) => o.status === "ACCEPTED").length,
+    preparing: orders.filter((o: any) => o.status === "PREPARING").length,
+    ready: orders.filter((o: any) => o.status === "READY").length,
+    delivered: orders.filter((o: any) => o.status === "DELIVERED").length,
   };
 
-  const topSellingMap = new Map<
-    string,
-    {
-      menuItemId: string;
-      name: string;
-      quantity: number;
-      revenue: number;
-    }
-  >();
+  const topSellingMap = new Map();
 
   for (const order of todayOrders as any[]) {
     for (const item of order.items || []) {
       const menuItem = item.menuItem;
-
       if (!menuItem?._id) continue;
 
       const id = menuItem._id.toString();
@@ -234,44 +193,6 @@ async function getDashboardData() {
   );
 }
 
-function SummaryCard({
-  title,
-  value,
-  description,
-  icon: Icon,
-  tone = "emerald",
-}: {
-  title: string;
-  value: string | number;
-  description: string;
-  icon: any;
-  tone?: "emerald" | "amber" | "sky" | "red" | "purple";
-}) {
-  const toneClass = {
-    emerald: "bg-emerald-500/10 text-emerald-300",
-    amber: "bg-amber-500/10 text-amber-300",
-    sky: "bg-sky-500/10 text-sky-300",
-    red: "bg-red-500/10 text-red-300",
-    purple: "bg-purple-500/10 text-purple-300",
-  }[tone];
-
-  return (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
-      <div
-        className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${toneClass}`}
-      >
-        <Icon size={22} />
-      </div>
-
-      <p className="text-sm text-neutral-500">{title}</p>
-
-      <h3 className="mt-2 text-3xl font-semibold tracking-tight">{value}</h3>
-
-      <p className="mt-2 text-xs leading-5 text-neutral-500">{description}</p>
-    </div>
-  );
-}
-
 export default async function AdminDashboardPage() {
   const data = await getDashboardData();
 
@@ -281,23 +202,16 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <section className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.22),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-6">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
           <div>
-            <p className="text-sm font-medium text-emerald-300">
-              Restaurant Command Center
-            </p>
-
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-              Welcome back, Admin
-            </h1>
-
+            <p className="text-sm font-medium text-emerald-300">Restaurant Command Center</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Welcome back, Admin</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">
-              Monitor today&apos;s sales, active orders, kitchen flow, cashier
-              payments and inventory alerts from one place.
+              Monitor today's sales, active orders, kitchen flow, cashier payments and inventory alerts.
             </p>
           </div>
-
           <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
             <p className="text-xs text-neutral-500">Today Revenue</p>
             <p className="mt-1 text-3xl font-semibold text-emerald-300">
@@ -307,116 +221,92 @@ export default async function AdminDashboardPage() {
         </div>
       </section>
 
+      {/* Summary Cards */}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <SummaryCard
-          title="Today Revenue"
-          value={formatCurrency(data.cards.todayRevenue)}
-          description="Paid orders received today"
-          icon={BarChart3}
-          tone="emerald"
-        />
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
+            <BarChart3 size={22} />
+          </div>
+          <p className="text-sm text-neutral-500">Today Revenue</p>
+          <h3 className="mt-2 text-3xl font-semibold tracking-tight">
+            {formatCurrency(data.cards.todayRevenue)}
+          </h3>
+        </div>
 
-        <SummaryCard
-          title="Active Orders"
-          value={data.cards.activeOrders}
-          description="Pending, accepted and preparing"
-          icon={ClipboardList}
-          tone="sky"
-        />
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-300">
+            <ClipboardList size={22} />
+          </div>
+          <p className="text-sm text-neutral-500">Active Orders</p>
+          <h3 className="mt-2 text-3xl font-semibold tracking-tight">{data.cards.activeOrders}</h3>
+        </div>
 
-        <SummaryCard
-          title="Ready Orders"
-          value={data.cards.readyOrders}
-          description="Waiting for waiter delivery"
-          icon={Truck}
-          tone="purple"
-        />
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-300">
+            <Truck size={22} />
+          </div>
+          <p className="text-sm text-neutral-500">Ready Orders</p>
+          <h3 className="mt-2 text-3xl font-semibold tracking-tight">{data.cards.readyOrders}</h3>
+        </div>
 
-        <SummaryCard
-          title="Pending Bills"
-          value={data.cards.pendingPayments}
-          description="Pay later bills to settle"
-          icon={CreditCard}
-          tone="amber"
-        />
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-300">
+            <CreditCard size={22} />
+          </div>
+          <p className="text-sm text-neutral-500">Pending Bills</p>
+          <h3 className="mt-2 text-3xl font-semibold tracking-tight">{data.cards.pendingPayments}</h3>
+        </div>
 
-        <SummaryCard
-          title="Low Stock"
-          value={data.cards.lowStockItems}
-          description="Ingredients below minimum level"
-          icon={AlertTriangle}
-          tone="red"
-        />
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-red-300">
+            <AlertTriangle size={22} />
+          </div>
+          <p className="text-sm text-neutral-500">Low Stock</p>
+          <h3 className="mt-2 text-3xl font-semibold tracking-tight">{data.cards.lowStockItems}</h3>
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        {/* Recent Orders */}
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
-          <div className="mb-5 flex items-center justify-between gap-4">
+          <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold">Recent Orders</h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Latest customer orders from QR menu.
-              </p>
+              <p className="mt-1 text-sm text-neutral-500">Latest customer orders from QR menu.</p>
             </div>
-
-            <Link
-              href="/kitchen/orders"
-              className="rounded-xl border border-white/10 px-3 py-2 text-xs text-neutral-300 transition hover:bg-white/10"
-            >
+            <Link href="/kitchen/orders" className="rounded-xl border border-white/10 px-3 py-2 text-xs text-neutral-300 hover:bg-white/10">
               View kitchen
             </Link>
           </div>
 
           <div className="space-y-3">
-            {recentOrders.map((order) => (
-              <div
-                key={order._id}
-                className="rounded-2xl border border-white/10 bg-black/20 p-4"
-              >
-                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                  <div>
-                    <p className="text-sm font-medium">
-                      Order #{order._id.slice(-6).toUpperCase()}
-                    </p>
-
-                    <p className="mt-1 flex items-center gap-2 text-xs text-neutral-500">
-                      <Clock size={13} />
-                      {order.table?.name || "Take Away"} ·{" "}
-                      {new Date(order.createdAt).toLocaleString()}
-                    </p>
+            {recentOrders.length > 0 ? (
+              recentOrders.map((order) => (
+                <div key={order._id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                    <div>
+                      <p className="text-sm font-medium">Order #{order._id.slice(-6).toUpperCase()}</p>
+                      <p className="mt-1 flex items-center gap-2 text-xs text-neutral-500">
+                        <Clock size={13} />
+                        {order.table?.name || "Take Away"} · {new Date(order.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-3 py-1 text-xs font-medium ${statusBadge(order.status)}`}>
+                        {order.status}
+                      </span>
+                      <span className={`rounded-full border px-3 py-1 text-xs font-medium ${statusBadge(order.paymentStatus)}`}>
+                        {order.paymentStatus}
+                      </span>
+                    </div>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-medium ${statusBadge(
-                        order.status
-                      )}`}
-                    >
-                      {order.status}
-                    </span>
-
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-medium ${statusBadge(
-                        order.paymentStatus
-                      )}`}
-                    >
-                      {order.paymentStatus}
-                    </span>
+                  <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+                    <p className="text-xs text-neutral-500">{order.items?.length || 0} item(s)</p>
+                    <p className="text-sm font-semibold">{formatCurrency(order.totalAmount)}</p>
                   </div>
                 </div>
-
-                <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
-                  <p className="text-xs text-neutral-500">
-                    {order.items?.length || 0} item group(s)
-                  </p>
-                  <p className="text-sm font-semibold">
-                    {formatCurrency(order.totalAmount)}
-                  </p>
-                </div>
-              </div>
-            ))}
-
-            {recentOrders.length === 0 && (
+              ))
+            ) : (
               <div className="rounded-2xl border border-white/10 bg-black/20 p-8 text-center">
                 <p className="text-sm text-neutral-500">No recent orders.</p>
               </div>
@@ -424,184 +314,120 @@ export default async function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
-            <h2 className="text-lg font-semibold">Order Status Overview</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Overall order workflow status.
-            </p>
-
-            <div className="mt-5 space-y-3">
-              {[
-                ["Pending", data.orderStatusCounts.pending, "text-amber-300"],
-                ["Accepted", data.orderStatusCounts.accepted, "text-sky-300"],
-                [
-                  "Preparing",
-                  data.orderStatusCounts.preparing,
-                  "text-orange-300",
-                ],
-                ["Ready", data.orderStatusCounts.ready, "text-emerald-300"],
-                [
-                  "Delivered",
-                  data.orderStatusCounts.delivered,
-                  "text-purple-300",
-                ],
-              ].map(([label, value, color]) => (
-                <div
-                  key={label}
-                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
-                >
-                  <p className="text-sm text-neutral-400">{label}</p>
-                  <p className={`text-lg font-semibold ${color}`}>{value}</p>
-                </div>
-              ))}
+        {/* Low Stock Alerts - Improved */}
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                Low Stock Alerts
+                {lowStockItems.length > 0 && (
+                  <span className="rounded-full bg-red-500/20 px-2.5 py-0.5 text-xs font-medium text-red-300">
+                    {lowStockItems.length}
+                  </span>
+                )}
+              </h2>
+              <p className="mt-1 text-sm text-neutral-500">Items below minimum stock level</p>
             </div>
+
+            <Link href="/admin/inventory" className="rounded-xl border border-white/10 px-3 py-2 text-xs text-neutral-300 hover:bg-white/10">
+              Manage Inventory
+            </Link>
           </div>
 
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Low Stock Alerts</h2>
-                <p className="mt-1 text-sm text-neutral-500">
-                  Items below minimum quantity.
-                </p>
-              </div>
-
-              <Package className="text-amber-300" size={22} />
-            </div>
-
+          {lowStockItems.length > 0 ? (
             <div className="space-y-3">
-              {lowStockItems.map((item) => (
-                <div
-                  key={item._id}
-                  className="flex items-center justify-between rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{item.name}</p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      Minimum: {item.minQuantity} {item.unit}
-                    </p>
+              {lowStockItems.map((item) => {
+                const shortage = item.minQuantity - item.quantity;
+                return (
+                  <div key={item._id} className="flex items-center justify-between rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">{item.name}</p>
+                      <p className="mt-1 text-xs text-neutral-500">
+                        Minimum: {item.minQuantity} {item.unit}
+                        {shortage > 0 && <span className="ml-2 text-red-400">(Short by {shortage} {item.unit})</span>}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-amber-300">{item.quantity} {item.unit}</p>
+                      <p className="text-xs text-neutral-500">Current</p>
+                    </div>
                   </div>
-
-                  <p className="text-sm font-semibold text-amber-300">
-                    {item.quantity} {item.unit}
-                  </p>
-                </div>
-              ))}
-
-              {lowStockItems.length === 0 && (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-center">
-                  <p className="text-sm text-neutral-500">
-                    No low stock alerts.
-                  </p>
-                </div>
-              )}
+                );
+              })}
             </div>
-          </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-8 text-center">
+              <Package className="mx-auto mb-3 text-emerald-400" size={32} />
+              <p className="font-medium text-emerald-300">All stock levels are healthy</p>
+              <p className="mt-1 text-sm text-neutral-500">No low stock alerts at the moment.</p>
+            </div>
+          )}
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      {/* Pending Payments + Top Selling */}
+      <section className="grid gap-6 xl:grid-cols-2">
+        {/* Pending Payments */}
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold">Pending Payments</h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Pay Later bills waiting for cashier.
-              </p>
+              <p className="mt-1 text-sm text-neutral-500">Pay Later bills waiting for cashier.</p>
             </div>
-
-            <Link
-              href="/cashier/orders"
-              className="rounded-xl border border-white/10 px-3 py-2 text-xs text-neutral-300 transition hover:bg-white/10"
-            >
+            <Link href="/cashier/orders" className="rounded-xl border border-white/10 px-3 py-2 text-xs text-neutral-300 hover:bg-white/10">
               Cashier
             </Link>
           </div>
 
           <div className="space-y-3">
-            {pendingPayments.map((order) => (
-              <div
-                key={order._id}
-                className="rounded-2xl border border-white/10 bg-black/20 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">
-                      Bill #{order._id.slice(-6).toUpperCase()}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {order.table?.name || "Take Away"} · {order.status}
-                    </p>
+            {pendingPayments.length > 0 ? (
+              pendingPayments.map((order) => (
+                <div key={order._id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Bill #{order._id.slice(-6).toUpperCase()}</p>
+                      <p className="mt-1 text-xs text-neutral-500">
+                        {order.table?.name || "Take Away"} · {order.status}
+                      </p>
+                    </div>
+                    <p className="text-sm font-semibold text-amber-300">{formatCurrency(order.totalAmount)}</p>
                   </div>
-
-                  <p className="text-sm font-semibold text-amber-300">
-                    {formatCurrency(order.totalAmount)}
-                  </p>
                 </div>
-              </div>
-            ))}
-
-            {pendingPayments.length === 0 && (
+              ))
+            ) : (
               <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-center">
-                <p className="text-sm text-neutral-500">
-                  No pending payments.
-                </p>
+                <p className="text-sm text-neutral-500">No pending payments.</p>
               </div>
             )}
           </div>
         </div>
 
+        {/* Today's Top Selling */}
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold">
-                Today&apos;s Top Selling
-              </h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Based on today&apos;s sold quantity.
-              </p>
+              <h2 className="text-lg font-semibold">Today's Top Selling</h2>
+              <p className="mt-1 text-sm text-neutral-500">Based on today's sold quantity.</p>
             </div>
-
-            <Link
-              href="/admin/reports"
-              className="rounded-xl border border-white/10 px-3 py-2 text-xs text-neutral-300 transition hover:bg-white/10"
-            >
+            <Link href="/admin/reports" className="rounded-xl border border-white/10 px-3 py-2 text-xs text-neutral-300 hover:bg-white/10">
               Reports
             </Link>
           </div>
 
           <div className="space-y-3">
-            {data.topSellingItems.map(
-              (item: {
-                menuItemId: string;
-                name: string;
-                quantity: number;
-                revenue: number;
-              }) => (
-                <div
-                  key={item.menuItemId}
-                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
-                >
+            {data.topSellingItems.length > 0 ? (
+              data.topSellingItems.map((item: any) => (
+                <div key={item.menuItemId} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                   <div>
                     <p className="text-sm font-medium">{item.name}</p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {item.quantity} sold today
-                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">{item.quantity} sold today</p>
                   </div>
-
-                  <p className="text-sm font-semibold text-emerald-300">
-                    {formatCurrency(item.revenue)}
-                  </p>
+                  <p className="text-sm font-semibold text-emerald-300">{formatCurrency(item.revenue)}</p>
                 </div>
-              )
-            )}
-
-            {data.topSellingItems.length === 0 && (
+              ))
+            ) : (
               <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-center">
-                <p className="text-sm text-neutral-500">
-                  No sales data for today.
-                </p>
+                <p className="text-sm text-neutral-500">No sales data for today.</p>
               </div>
             )}
           </div>
