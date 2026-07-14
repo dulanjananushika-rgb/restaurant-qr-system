@@ -9,6 +9,7 @@ import "@/models/ComboOffer";
 
 import WaiterOrderManager from "@/components/waiter/WaiterOrderManager";
 import LogoutButton from "@/components/auth/LogoutButton";
+export const dynamic = 'force-dynamic';
 
 async function getWaiterOrders() {
   await connectDB();
