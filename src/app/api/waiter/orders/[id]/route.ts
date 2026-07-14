@@ -4,7 +4,7 @@ import { createAuditLog } from "@/lib/audit";
 import { verifyToken } from "@/lib/auth";
 
 import Order from "@/models/Order";
-import "@/models/Table";
+import Table from "@/models/Table";
 import "@/models/User";
 
 type RouteParams = {
@@ -23,7 +23,6 @@ function isValidWaiterTransition(currentStatus: string, nextStatus: string) {
     PICKED_UP: ["DELIVERED"],
     DELIVERED: [],
   };
-
   return transitions[currentStatus]?.includes(nextStatus) || false;
 }
 
@@ -35,10 +34,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!token) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
+        { success: false, message: "Unauthorized" },
         { status: 401 }
       );
     }
@@ -47,17 +43,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (authUser.role !== "WAITER" && authUser.role !== "ADMIN") {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Access denied",
-        },
+        { success: false, message: "Access denied" },
         { status: 403 }
       );
     }
 
     const { id } = await params;
     const body = await request.json();
-
     const { status, note = "" } = body as {
       status?: string;
       note?: string;
@@ -65,10 +57,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!status || !allowedWaiterStatuses.includes(status as WaiterStatus)) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid waiter status",
-        },
+        { success: false, message: "Invalid waiter status" },
         { status: 400 }
       );
     }
@@ -77,10 +66,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!order) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Order not found",
-        },
+        { success: false, message: "Order not found" },
         { status: 404 }
       );
     }
@@ -98,17 +84,30 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const previousStatus = orderDoc.status;
-
     orderDoc.status = status;
 
+    // Set timestamps
     if (status === "PICKED_UP") {
       orderDoc.pickedUpAt = new Date();
     }
 
     if (status === "DELIVERED") {
       orderDoc.deliveredAt = new Date();
+
+      // ==================== TABLE STATUS UPDATE ====================
+      if (orderDoc.table && orderDoc.table._id) {
+        // PAY_NOW නම් Delivered වුණාම table එක release කරනවා
+        if (orderDoc.paymentType === "PAY_NOW") {
+          await Table.findByIdAndUpdate(orderDoc.table._id, {
+            status: "AVAILABLE",
+          });
+        }
+        // PAY_LATER නම් table එක තවම OCCUPIED විදිහට තියාගන්නවා
+      }
+      // ============================================================
     }
 
+    // Status History
     if (!Array.isArray(orderDoc.statusHistory)) {
       orderDoc.statusHistory = [];
     }
@@ -146,7 +145,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     });
   } catch (error) {
     console.error("Waiter order PATCH error:", error);
-
     return NextResponse.json(
       {
         success: false,
