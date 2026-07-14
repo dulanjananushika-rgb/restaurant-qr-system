@@ -361,7 +361,7 @@ export default function KitchenOrderManager({ orders }: { orders: Order[] }) {
           return (
             <article
               key={order._id}
-              className={`rounded-[26px] border p-5 transition ${delayCardClass(
+              className={`flex h-full flex-col rounded-[26px] border p-5 transition ${delayCardClass(
                 delayLevel
               )}`}
             >
@@ -440,7 +440,7 @@ export default function KitchenOrderManager({ orders }: { orders: Order[] }) {
                     <h3 className="text-sm font-semibold">Menu Items</h3>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
                     {order.items?.map((item) => (
                       <div
                         key={item._id}
@@ -470,7 +470,7 @@ export default function KitchenOrderManager({ orders }: { orders: Order[] }) {
                     <h3 className="text-sm font-semibold">Combo Items</h3>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
                     {order.comboItems?.map((combo) => (
                       <div
                         key={combo._id}
@@ -611,7 +611,7 @@ export default function KitchenOrderManager({ orders }: { orders: Order[] }) {
                 </section>
               )}
 
-              <div className="mt-5 space-y-3">
+              <div className="mt-auto space-y-3 pt-5">
                 {nextAction && (
                   <label className="block">
                     <span className="mb-2 block text-xs text-neutral-500">
