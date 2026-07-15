@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
-import { revalidatePath } from "next/cache"; // ← Import කළා
+import { revalidatePath } from "next/cache";
 import Category from "@/models/Category";
 
 export async function GET() {
@@ -49,11 +49,9 @@ export async function POST(request: Request) {
       description: description || "",
     });
 
-    // ==================== IMPORTANT FIX ====================
-    // Category එකක් create කළාට පස්සේ list එක refresh කරනවා
+    // Revalidate paths after creating new category
     revalidatePath("/admin/categories");
-    revalidatePath("/admin/menu"); // Menu item add form එකටත් update වෙන්න
-    // =====================================================
+    revalidatePath("/admin/menu");
 
     return NextResponse.json(
       {
