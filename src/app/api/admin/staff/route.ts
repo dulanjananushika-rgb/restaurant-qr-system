@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-
 import { connectDB } from "@/lib/mongodb";
+import { revalidatePath } from "next/cache"; // ← Import කළා
 import User from "@/models/User";
 
 export async function GET() {
@@ -81,6 +81,11 @@ export async function POST(request: Request) {
       role,
       status: status || "ACTIVE",
     });
+
+    // ==================== IMPORTANT FIX ====================
+    // Staff එකක් create කළාට පස්සේ list එක refresh කරනවා
+    revalidatePath("/admin/staff");
+    // =====================================================
 
     return NextResponse.json(
       {
