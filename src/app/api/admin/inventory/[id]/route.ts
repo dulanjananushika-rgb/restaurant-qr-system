@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
+import { revalidatePath } from "next/cache"; // ← Import කළා
 
 import InventoryItem from "@/models/InventoryItem";
 
@@ -48,6 +49,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         { status: 404 }
       );
     }
+
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/inventory");
+    // =====================================================
 
     return NextResponse.json({
       success: true,
