@@ -101,7 +101,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         );
       }
 
-      // Restore stock
       const oldItems = (orderDoc.items || []).map((item: any) => ({
         menuItemId: item.menuItem.toString(),
         quantity: Number(item.quantity || 0),
@@ -194,6 +193,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const stockCheck = await validateStockForItems(cleanedItems);
 
     if (!stockCheck.success) {
+      // Rollback: Deduct old items again
       if (oldItems.length > 0) {
         await deductStockForOrder(oldItems, orderDoc._id);
       }
@@ -268,9 +268,19 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     });
   } catch (error) {
     console.error("Public order PATCH error:", error);
+
+    // ==================== IMPROVED ERROR HANDLING ====================
+    let errorMessage = "Failed to update order";
+
+    if (error instanceof Error) {
+      console.error("Detailed Error Message:", error.message);
+      errorMessage = error.message; // Real error එක frontend එකට යවනවා
+    }
+
     return NextResponse.json(
-      { success: false, message: "Failed to update order" },
+      { success: false, message: errorMessage },
       { status: 500 }
     );
+    // ============================================================
   }
 }
