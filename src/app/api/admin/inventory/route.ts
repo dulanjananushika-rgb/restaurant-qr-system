@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
-
+import { revalidatePath } from "next/cache"; // ← Import කළා
 import InventoryItem from "@/models/InventoryItem";
 
 export async function GET() {
@@ -50,6 +50,10 @@ export async function POST(request: Request) {
       quantity: Number(quantity) || 0,
       minQuantity: Number(minQuantity) || 0,
     });
+
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/inventory");
+    // =====================================================
 
     return NextResponse.json(
       {
