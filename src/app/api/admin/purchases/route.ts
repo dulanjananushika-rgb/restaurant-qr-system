@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { createAuditLog } from "@/lib/audit";
+import { revalidatePath } from "next/cache"; // ← Import කළා
 
 import Purchase from "@/models/Purchase";
 import Supplier from "@/models/Supplier";
@@ -174,6 +175,11 @@ export async function POST(request: Request) {
       description: `Purchase created from ${supplierExists.name}. Total: Rs. ${totalAmount}`,
     });
 
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/purchases");
+    revalidatePath("/admin/inventory");
+    // =====================================================
+
     const populatedPurchase = await Purchase.findById(purchase._id)
       .populate("supplier")
       .populate("items.inventoryItem")
@@ -224,6 +230,10 @@ export async function PATCH(request: Request) {
       module: "PURCHASES",
       description: `Payment status changed to ${paymentStatus} for purchase #${purchase._id.toString().slice(-6)}`,
     });
+
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/purchases");
+    // =====================================================
 
     const updatedPurchase = await Purchase.findById(purchaseId)
       .populate("supplier")
