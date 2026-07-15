@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, Loader2, PackagePlus, Plus, ReceiptText, Save, Trash2 } from "lucide-react";
+import { Building2, Loader2, PackagePlus, Plus, Save, Trash2 } from "lucide-react";
 
 type Supplier = {
   _id: string;
@@ -268,76 +268,108 @@ export default function PurchaseManager({
             <h2 className="text-xl font-semibold">Create Purchase</h2>
           </div>
 
-          <form onSubmit={createPurchase} className="space-y-5">
+          <form onSubmit={createPurchase} className="space-y-6">
+            {/* Supplier + Invoice */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select
-                value={supplier}
-                onChange={(e) => setSupplier(e.target.value)}
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
-              >
-                {activeSuppliers.map((s) => (
-                  <option key={s._id} value={s._id}>{s.name}</option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-sm text-neutral-400 mb-1">Supplier</label>
+                <select
+                  value={supplier}
+                  onChange={(e) => setSupplier(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
+                >
+                  {activeSuppliers.map((s) => (
+                    <option key={s._id} value={s._id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
 
-              <input
-                value={invoiceNumber}
-                onChange={(e) => setInvoiceNumber(e.target.value)}
-                placeholder="Invoice Number"
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
-              />
+              <div>
+                <label className="block text-sm text-neutral-400 mb-1">Invoice Number (Optional)</label>
+                <input
+                  value={invoiceNumber}
+                  onChange={(e) => setInvoiceNumber(e.target.value)}
+                  placeholder="INV-2025-001"
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
+                />
+              </div>
             </div>
 
             {/* Purchase Items */}
             <div>
               <div className="flex justify-between items-center mb-3">
                 <p className="font-semibold">Purchase Items</p>
-                <button type="button" onClick={addRow} className="flex items-center gap-1 text-sm bg-white text-black px-3 py-1 rounded-xl">
-                  <Plus size={14} /> Add Item
+                <button
+                  type="button"
+                  onClick={addRow}
+                  className="flex items-center gap-2 text-sm bg-white text-black px-4 py-2 rounded-xl font-medium"
+                >
+                  <Plus size={16} /> Add Item
                 </button>
               </div>
 
-              {rows.map((row, index) => (
-                <div key={row.rowId} className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-                  <select
-                    value={row.inventoryItem}
-                    onChange={(e) => updateRow(row.rowId, "inventoryItem", e.target.value)}
-                    className="rounded-xl border border-white/10 bg-black/20 px-3 py-3"
-                  >
-                    {inventoryItems.map((item) => (
-                      <option key={item._id} value={item._id}>{item.name}</option>
-                    ))}
-                  </select>
+              {rows.map((row) => (
+                <div
+                  key={row.rowId}
+                  className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-3 items-end border border-white/10 rounded-2xl p-4"
+                >
+                  {/* Inventory Item */}
+                  <div className="md:col-span-5">
+                    <label className="block text-xs text-neutral-400 mb-1">Inventory Item</label>
+                    <select
+                      value={row.inventoryItem}
+                      onChange={(e) => updateRow(row.rowId, "inventoryItem", e.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm"
+                    >
+                      {inventoryItems.map((item) => (
+                        <option key={item._id} value={item._id}>
+                          {item.name} ({item.unit})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <input
-                    type="number"
-                    value={row.quantity}
-                    onChange={(e) => updateRow(row.rowId, "quantity", e.target.value)}
-                    placeholder="Quantity"
-                    className="rounded-xl border border-white/10 bg-black/20 px-3 py-3"
-                  />
+                  {/* Quantity */}
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-neutral-400 mb-1">Quantity</label>
+                    <input
+                      type="number"
+                      value={row.quantity}
+                      onChange={(e) => updateRow(row.rowId, "quantity", e.target.value)}
+                      placeholder="Quantity"
+                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm"
+                    />
+                  </div>
 
-                  <input
-                    type="number"
-                    value={row.unitCost}
-                    onChange={(e) => updateRow(row.rowId, "unitCost", e.target.value)}
-                    placeholder="Unit Cost"
-                    className="rounded-xl border border-white/10 bg-black/20 px-3 py-3"
-                  />
+                  {/* Unit Cost */}
+                  <div className="md:col-span-3">
+                    <label className="block text-xs text-neutral-400 mb-1">Unit Cost (Rs.)</label>
+                    <input
+                      type="number"
+                      value={row.unitCost}
+                      onChange={(e) => updateRow(row.rowId, "unitCost", e.target.value)}
+                      placeholder="Unit Cost"
+                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm"
+                    />
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => removeRow(row.rowId)}
-                    disabled={rows.length === 1}
-                    className="text-red-400 flex items-center justify-center"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  {/* Remove Button */}
+                  <div className="md:col-span-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.rowId)}
+                      disabled={rows.length === 1}
+                      className="text-red-400 hover:text-red-500 p-2"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
 
-            <div className="text-right text-xl font-semibold text-emerald-300">
+            {/* Total Amount */}
+            <div className="text-right text-2xl font-semibold text-emerald-300">
               Total: {formatCurrency(totalAmount)}
             </div>
 
@@ -379,7 +411,6 @@ export default function PurchaseManager({
                 </div>
               </div>
 
-              {/* Mark as Paid Button */}
               {purchase.paymentStatus !== "PAID" && (
                 <button
                   onClick={() => markAsPaid(purchase._id)}
