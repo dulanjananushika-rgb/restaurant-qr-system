@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
+import { revalidatePath } from "next/cache"; // ← Import කළා
 
 import RecipeItem from "@/models/RecipeItem";
 import MenuItem from "@/models/MenuItem";
@@ -150,6 +151,10 @@ export async function POST(request: Request) {
     }));
 
     const savedRecipes = await RecipeItem.insertMany(recipeDocs);
+
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/recipes");
+    // =====================================================
 
     return NextResponse.json(
       {

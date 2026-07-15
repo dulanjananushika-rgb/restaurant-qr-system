@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
+import { revalidatePath } from "next/cache"; // ← Import කළා
 
 import RecipeItem from "@/models/RecipeItem";
 
@@ -46,6 +47,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       );
     }
 
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/recipes");
+    // =====================================================
+
     return NextResponse.json({
       success: true,
       message: "Recipe mapping updated successfully",
@@ -82,6 +87,10 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
         { status: 404 }
       );
     }
+
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/recipes");
+    // =====================================================
 
     return NextResponse.json({
       success: true,
