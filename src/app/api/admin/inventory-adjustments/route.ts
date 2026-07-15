@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { createAuditLog } from "@/lib/audit";
+import { revalidatePath } from "next/cache"; // ← Import කළා
 
 import InventoryItem from "@/models/InventoryItem";
 import StockMovement from "@/models/StockMovement";
@@ -178,6 +179,11 @@ export async function POST(request: Request) {
       module: "INVENTORY",
       description: `${inventoryItem.name} stock changed from ${previousQuantity} ${inventoryItem.unit} to ${newQuantity} ${inventoryItem.unit}. Type: ${type}.`,
     });
+
+    // ==================== IMPORTANT FIX ====================
+    revalidatePath("/admin/inventory");
+    revalidatePath("/admin/inventory-adjustments");
+    // =====================================================
 
     const populatedMovement = await StockMovement.findById(movement._id)
       .populate("inventoryItem")
