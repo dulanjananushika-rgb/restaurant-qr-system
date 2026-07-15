@@ -84,7 +84,7 @@ export async function deductStockForOrder(
 
     movements.push({
       inventoryItem: inv._id,
-      type: "OUT",
+      type: "STOCK_OUT",           // ← Fixed
       quantity: qty,
       previousQuantity: previous,
       newQuantity: inv.quantity,
@@ -118,7 +118,7 @@ export async function restoreStockForOrder(
 
     movements.push({
       inventoryItem: inv._id,
-      type: "IN",
+      type: "STOCK_IN",            // ← Fixed
       quantity: qty,
       previousQuantity: previous,
       newQuantity: inv.quantity,
