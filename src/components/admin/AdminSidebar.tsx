@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Package,
   QrCode,
+  UserRoundCheck,
   ReceiptText,
   Settings,
   Store,
@@ -31,6 +32,11 @@ const menuItems = [
   { name: "Categories", icon: FolderOpen, href: "/admin/categories" },
   { name: "Tables & QR", icon: QrCode, href: "/admin/tables" },
 
+  {
+  name: "Waiter Assignments",
+  icon: UserRoundCheck,
+  href: "/admin/table-assignments",
+   },
   { name: "Kitchen", icon: ChefHat, href: "/kitchen/orders" },
   { name: "Waiter", icon: Truck, href: "/waiter/orders" },
   { name: "Cashier", icon: ReceiptText, href: "/cashier/orders" },

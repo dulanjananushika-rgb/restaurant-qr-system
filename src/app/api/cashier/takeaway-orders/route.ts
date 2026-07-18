@@ -1,247 +1,945 @@
-import { NextResponse } from "next/server";
+import mongoose from "mongoose";
+import { NextRequest, NextResponse } from "next/server";
+
 import { connectDB } from "@/lib/mongodb";
+import { verifyToken } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 
-import Order from "@/models/Order";
-import MenuItem from "@/models/MenuItem";
-import ComboOffer from "@/models/ComboOffer";
-import Table from "@/models/Table";
-
 import {
-  validateStockForItems,
   deductStockForOrder,
+  restoreStockForOrder,
+  validateStockForItems,
 } from "@/lib/inventory";
 
+import Order from "@/models/Order";
+import Payment from "@/models/Payment";
+import MenuItem from "@/models/MenuItem";
+import ComboOffer from "@/models/ComboOffer";
+import User from "@/models/User";
+
+type PaymentType = "PAY_NOW" | "PAY_LATER";
+type CounterPaymentMethod = "CASH" | "CARD";
+
 type OrderRequestItem = {
+  menuItemId?: string;
+  quantity?: number;
+};
+
+type ComboOrderRequestItem = {
+  comboOfferId?: string;
+  quantity?: number;
+};
+
+type TakeawayRequestBody = {
+  customerName?: string;
+  customerPhone?: string;
+  paymentType?: PaymentType;
+  paymentMethod?: CounterPaymentMethod;
+  paymentNote?: string;
+  items?: OrderRequestItem[];
+  comboItems?: ComboOrderRequestItem[];
+};
+
+type StockOrderItem = {
   menuItemId: string;
   quantity: number;
 };
 
-type ComboOrderRequestItem = {
-  comboOfferId: string;
-  quantity: number;
-};
+function sanitizeText(
+  value: unknown,
+  maximumLength: number
+): string {
+  if (typeof value !== "string") {
+    return "";
+  }
 
-function isComboActive(combo: any) {
-  if (!combo.active) return false;
+  return value.trim().slice(0, maximumLength);
+}
+
+function isComboActive(combo: any): boolean {
+  if (!combo.active) {
+    return false;
+  }
+
   const now = new Date();
-  if (combo.startDate && new Date(combo.startDate) > now) return false;
-  if (combo.endDate && new Date(combo.endDate) < now) return false;
+
+  if (
+    combo.startDate &&
+    new Date(combo.startDate) > now
+  ) {
+    return false;
+  }
+
+  if (
+    combo.endDate &&
+    new Date(combo.endDate) < now
+  ) {
+    return false;
+  }
+
   return true;
 }
 
-export async function POST(request: Request) {
+function normalizeQuantity(value: unknown): number {
+  const quantity = Number(value);
+
+  if (
+    !Number.isInteger(quantity) ||
+    quantity < 1 ||
+    quantity > 50
+  ) {
+    return 0;
+  }
+
+  return quantity;
+}
+
+/*
+ * Combine duplicate menu item IDs.
+ *
+ * Example:
+ * [{ id: A, qty: 1 }, { id: A, qty: 2 }]
+ * becomes:
+ * [{ id: A, qty: 3 }]
+ */
+function aggregateMenuItems(
+  items: OrderRequestItem[]
+): Array<{
+  menuItemId: string;
+  quantity: number;
+}> {
+  const quantityMap = new Map<string, number>();
+
+  for (const item of items) {
+    const menuItemId = sanitizeText(
+      item.menuItemId,
+      100
+    );
+
+    const quantity = normalizeQuantity(
+      item.quantity
+    );
+
+    if (!menuItemId || quantity === 0) {
+      continue;
+    }
+
+    quantityMap.set(
+      menuItemId,
+      (quantityMap.get(menuItemId) || 0) +
+        quantity
+    );
+  }
+
+  return Array.from(quantityMap.entries()).map(
+    ([menuItemId, quantity]) => ({
+      menuItemId,
+      quantity,
+    })
+  );
+}
+
+function aggregateComboItems(
+  items: ComboOrderRequestItem[]
+): Array<{
+  comboOfferId: string;
+  quantity: number;
+}> {
+  const quantityMap = new Map<string, number>();
+
+  for (const item of items) {
+    const comboOfferId = sanitizeText(
+      item.comboOfferId,
+      100
+    );
+
+    const quantity = normalizeQuantity(
+      item.quantity
+    );
+
+    if (!comboOfferId || quantity === 0) {
+      continue;
+    }
+
+    quantityMap.set(
+      comboOfferId,
+      (quantityMap.get(comboOfferId) || 0) +
+        quantity
+    );
+  }
+
+  return Array.from(quantityMap.entries()).map(
+    ([comboOfferId, quantity]) => ({
+      comboOfferId,
+      quantity,
+    })
+  );
+}
+
+async function getAuthenticatedCashier(
+  request: NextRequest
+) {
+  const token =
+    request.cookies.get("restaurant_token")?.value;
+
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const authUser = verifyToken(token);
+
+    if (
+      authUser.role !== "CASHIER" &&
+      authUser.role !== "ADMIN"
+    ) {
+      return null;
+    }
+
+    const activeUser = await User.findOne({
+      _id: authUser.id,
+      role: authUser.role,
+      status: "ACTIVE",
+    })
+      .select("_id name email role status")
+      .lean();
+
+    if (!activeUser) {
+      return null;
+    }
+
+    return {
+      authUser,
+      activeUser,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(
+  request: NextRequest
+) {
+  let createdOrderId: string | null = null;
+  let stockWasDeducted = false;
+  let stockItemsForRollback: StockOrderItem[] =
+    [];
+
   try {
     await connectDB();
 
-    const body = await request.json();
-    const {
-      tableId,
-      items = [],
-      comboItems = [],
-      paymentType,
-      customerName = "",
-      customerPhone = "",
-    } = body;
+    /* =========================
+       Authentication
+    ========================= */
 
-    if (!tableId) {
+    const authenticatedUser =
+      await getAuthenticatedCashier(request);
+
+    if (!authenticatedUser) {
       return NextResponse.json(
-        { success: false, message: "Table is required" },
-        { status: 400 }
+        {
+          success: false,
+          message:
+            "Unauthorized. Cashier access is required.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const { authUser } = authenticatedUser;
+
+    /* =========================
+       Request data
+    ========================= */
+
+    const body =
+      (await request.json()) as TakeawayRequestBody;
+
+    const customerName = sanitizeText(
+      body.customerName,
+      80
+    );
+
+    const customerPhone = sanitizeText(
+      body.customerPhone,
+      20
+    );
+
+    const paymentNote = sanitizeText(
+      body.paymentNote,
+      300
+    );
+
+    const paymentType = body.paymentType;
+
+    const paymentMethod =
+      body.paymentMethod;
+
+    /*
+     * Customer name is useful for calling
+     * the customer when the order is ready.
+     */
+    if (customerName.length < 2) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Customer name is required for a takeaway order.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    /*
+     * Phone is optional, but validate it
+     * when the cashier enters a value.
+     */
+    if (
+      customerPhone &&
+      !/^[0-9+\-\s()]{7,20}$/.test(
+        customerPhone
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please enter a valid customer phone number.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
     if (
-      (!items || items.length === 0) &&
-      (!comboItems || comboItems.length === 0)
+      paymentType !== "PAY_NOW" &&
+      paymentType !== "PAY_LATER"
     ) {
       return NextResponse.json(
-        { success: false, message: "Please add at least one item" },
-        { status: 400 }
+        {
+          success: false,
+          message:
+            "Please select a valid payment type.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    if (!["PAY_NOW", "PAY_LATER"].includes(paymentType)) {
+    /*
+     * Because this is an in-restaurant
+     * counter order, only cash and card
+     * are accepted here.
+     */
+    if (
+      paymentType === "PAY_NOW" &&
+      paymentMethod !== "CASH" &&
+      paymentMethod !== "CARD"
+    ) {
       return NextResponse.json(
-        { success: false, message: "Valid payment type is required" },
-        { status: 400 }
+        {
+          success: false,
+          message:
+            "Please select CASH or CARD for Pay Now.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    const table = await Table.findById(tableId);
-    if (!table) {
+    const cleanedItems = aggregateMenuItems(
+      Array.isArray(body.items)
+        ? body.items
+        : []
+    );
+
+    const cleanedComboItems =
+      aggregateComboItems(
+        Array.isArray(body.comboItems)
+          ? body.comboItems
+          : []
+      );
+
+    if (
+      cleanedItems.length === 0 &&
+      cleanedComboItems.length === 0
+    ) {
       return NextResponse.json(
-        { success: false, message: "Table not found" },
-        { status: 404 }
+        {
+          success: false,
+          message:
+            "Please add at least one menu item or combo offer.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    // Prepare items for inventory
-    const orderItemsForStock: any[] = [];
+    if (
+      cleanedItems.length +
+        cleanedComboItems.length >
+      50
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "A maximum of 50 different items can be added to one order.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
-    // Normal items
-    const cleanedItems = items
-      .filter((item: any) => item.menuItemId && Number(item.quantity) > 0)
-      .map((item: any) => ({
-        menuItemId: item.menuItemId,
-        quantity: Number(item.quantity),
-      }));
+    /* =========================
+       Validate IDs
+    ========================= */
 
-    const menuItemIds = cleanedItems.map((i: any) => i.menuItemId);
+    const invalidMenuItemId =
+      cleanedItems.find(
+        (item) =>
+          !mongoose.Types.ObjectId.isValid(
+            item.menuItemId
+          )
+      );
+
+    if (invalidMenuItemId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "One or more menu item IDs are invalid.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const invalidComboId =
+      cleanedComboItems.find(
+        (item) =>
+          !mongoose.Types.ObjectId.isValid(
+            item.comboOfferId
+          )
+      );
+
+    if (invalidComboId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "One or more combo offer IDs are invalid.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    /* =========================
+       Load menu items
+    ========================= */
+
+    const menuItemIds = cleanedItems.map(
+      (item) => item.menuItemId
+    );
+
     const menuItems =
       menuItemIds.length > 0
-        ? await MenuItem.find({ _id: { $in: menuItemIds }, available: true })
+        ? await MenuItem.find({
+            _id: {
+              $in: menuItemIds,
+            },
+            available: true,
+          }).lean()
         : [];
 
-    if (menuItems.length !== menuItemIds.length) {
+    if (
+      menuItems.length !==
+      menuItemIds.length
+    ) {
       return NextResponse.json(
-        { success: false, message: "Some menu items are not available" },
-        { status: 400 }
+        {
+          success: false,
+          message:
+            "Some selected menu items are unavailable.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    const orderItems = cleanedItems.map((item: any) => {
-      const menuItem = menuItems.find(
-        (m: any) => m._id.toString() === item.menuItemId
-      );
-      if (!menuItem) throw new Error("Invalid menu item");
+    const orderItems =
+      cleanedItems.map((item) => {
+        const menuItem = (
+          menuItems as any[]
+        ).find(
+          (currentMenuItem) =>
+            currentMenuItem._id.toString() ===
+            item.menuItemId
+        );
 
-      orderItemsForStock.push({
-        menuItemId: item.menuItemId,
-        quantity: item.quantity,
+        if (!menuItem) {
+          throw new Error(
+            "Selected menu item was not found."
+          );
+        }
+
+        return {
+          menuItem: menuItem._id,
+          quantity: item.quantity,
+          price: Number(
+            menuItem.price || 0
+          ),
+        };
       });
 
-      return {
-        menuItem: menuItem._id,
-        quantity: item.quantity,
-        price: Number(menuItem.price || 0),
-      };
-    });
+    /* =========================
+       Load combo offers
+    ========================= */
 
-    // Combo items
-    const cleanedComboItems = comboItems
-      .filter((item: any) => item.comboOfferId && Number(item.quantity) > 0)
-      .map((item: any) => ({
-        comboOfferId: item.comboOfferId,
-        quantity: Number(item.quantity),
-      }));
+    const comboOfferIds =
+      cleanedComboItems.map(
+        (item) => item.comboOfferId
+      );
 
-    const comboOfferIds = cleanedComboItems.map((i: any) => i.comboOfferId);
     const comboOffers =
       comboOfferIds.length > 0
-        ? await ComboOffer.find({ _id: { $in: comboOfferIds } }).populate("items.menuItem")
+        ? await ComboOffer.find({
+            _id: {
+              $in: comboOfferIds,
+            },
+          })
+            .populate("items.menuItem")
+            .lean()
         : [];
 
-    if (comboOffers.length !== comboOfferIds.length) {
+    if (
+      comboOffers.length !==
+      comboOfferIds.length
+    ) {
       return NextResponse.json(
-        { success: false, message: "Some combo offers are invalid" },
-        { status: 400 }
+        {
+          success: false,
+          message:
+            "Some selected combo offers were not found.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
     for (const combo of comboOffers as any[]) {
       if (!isComboActive(combo)) {
         return NextResponse.json(
-          { success: false, message: `${combo.name} combo is not active` },
-          { status: 400 }
+          {
+            success: false,
+            message: `${combo.name} is not currently active.`,
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const containsUnavailableItem =
+        combo.items?.some(
+          (comboItem: any) =>
+            !comboItem.menuItem ||
+            comboItem.menuItem.available ===
+              false
+        );
+
+      if (containsUnavailableItem) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `${combo.name} contains an unavailable menu item.`,
+          },
+          {
+            status: 400,
+          }
         );
       }
     }
 
-    const orderComboItems = cleanedComboItems.map((item: any) => {
-      const combo = (comboOffers as any[]).find(
-        (c) => c._id.toString() === item.comboOfferId
-      );
-      if (!combo) throw new Error("Invalid combo offer");
+    const orderComboItems =
+      cleanedComboItems.map((item) => {
+        const combo = (
+          comboOffers as any[]
+        ).find(
+          (currentCombo) =>
+            currentCombo._id.toString() ===
+            item.comboOfferId
+        );
 
-      combo.items.forEach((comboItem: any) => {
-        orderItemsForStock.push({
-          menuItemId: comboItem.menuItem._id.toString(),
-          quantity: Number(comboItem.quantity || 0) * item.quantity,
-        });
+        if (!combo) {
+          throw new Error(
+            "Selected combo offer was not found."
+          );
+        }
+
+        return {
+          comboOffer: combo._id,
+          quantity: item.quantity,
+          price: Number(
+            combo.offerPrice || 0
+          ),
+          originalPrice: Number(
+            combo.originalPrice || 0
+          ),
+
+          comboItemsSnapshot:
+            combo.items.map(
+              (comboItem: any) => ({
+                menuItem:
+                  comboItem.menuItem._id,
+
+                name:
+                  comboItem.menuItem.name,
+
+                quantity: Number(
+                  comboItem.quantity || 0
+                ),
+
+                priceSnapshot: Number(
+                  comboItem.priceSnapshot ||
+                    comboItem.menuItem
+                      .price ||
+                    0
+                ),
+              })
+            ),
+        };
       });
 
-      return {
-        comboOffer: combo._id,
+    /* =========================
+       Inventory requirements
+    ========================= */
+
+    const stockItems: StockOrderItem[] =
+      cleanedItems.map((item) => ({
+        menuItemId: item.menuItemId,
         quantity: item.quantity,
-        price: Number(combo.offerPrice || 0),
-        originalPrice: Number(combo.originalPrice || 0),
-        comboItemsSnapshot: combo.items.map((ci: any) => ({
-          menuItem: ci.menuItem._id,
-          name: ci.menuItem.name,
-          quantity: Number(ci.quantity || 0),
-          priceSnapshot: Number(ci.priceSnapshot || 0),
-        })),
-      };
-    });
+      }));
 
-    // Total Amount (Fixed with types)
-    const normalTotal = orderItems.reduce(
-      (sum: number, item: any) => sum + item.price * item.quantity,
-      0
-    );
+    for (const cleanedComboItem of cleanedComboItems) {
+      const combo = (
+        comboOffers as any[]
+      ).find(
+        (currentCombo) =>
+          currentCombo._id.toString() ===
+          cleanedComboItem.comboOfferId
+      );
 
-    const comboTotal = orderComboItems.reduce(
-      (sum: number, item: any) => sum + item.price * item.quantity,
-      0
-    );
+      if (!combo) {
+        continue;
+      }
 
-    const totalAmount = normalTotal + comboTotal;
+      for (const comboItem of combo.items) {
+        stockItems.push({
+          menuItemId:
+            comboItem.menuItem._id.toString(),
 
-    // Validate Stock
-    const stockCheck = await validateStockForItems(orderItemsForStock);
+          quantity:
+            Number(
+              comboItem.quantity || 0
+            ) *
+            cleanedComboItem.quantity,
+        });
+      }
+    }
+
+    stockItemsForRollback = stockItems;
+
+    const stockCheck =
+      await validateStockForItems(
+        stockItems
+      );
+
     if (!stockCheck.success) {
       return NextResponse.json(
-        { success: false, message: stockCheck.message },
-        { status: 400 }
+        {
+          success: false,
+          message:
+            stockCheck.message ||
+            "Insufficient stock for this order.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    // Create Order
+    /* =========================
+       Calculate total on server
+    ========================= */
+
+    const normalItemsTotal =
+      orderItems.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.price) *
+            Number(item.quantity),
+        0
+      );
+
+    const comboItemsTotal =
+      orderComboItems.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.price) *
+            Number(item.quantity),
+        0
+      );
+
+    const totalAmount =
+      normalItemsTotal +
+      comboItemsTotal;
+
+    if (totalAmount <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "The takeaway order total is invalid.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    /* =========================
+       Create takeaway order
+    ========================= */
+
     const order = await Order.create({
-      table: table._id,
+      /*
+       * Takeaway orders are never linked
+       * to dining tables.
+       */
+      table: null,
+
       orderType: "TAKE_AWAY",
+
       customerName,
       customerPhone,
+
       items: orderItems,
       comboItems: orderComboItems,
+
       totalAmount,
+
       status: "PENDING",
+
       paymentType,
-      paymentStatus: paymentType === "PAY_NOW" ? "PENDING" : "UNPAID",
+
+      paymentStatus:
+        paymentType === "PAY_NOW"
+          ? "PAID"
+          : "UNPAID",
+
+      statusHistory: [
+        {
+          fromStatus: "",
+          toStatus: "PENDING",
+
+          changedBy: authUser.id,
+          changedByName: authUser.name,
+          changedByRole: authUser.role,
+
+          note:
+            "Takeaway order created at the cashier counter.",
+
+          changedAt: new Date(),
+        },
+      ],
     });
 
-    // Deduct Stock (Fixed - convert ObjectId to string)
-    await deductStockForOrder(orderItemsForStock, order._id.toString());
+    createdOrderId =
+      order._id.toString();
 
-    // Update table
-    table.status = "OCCUPIED";
-    await table.save();
+    /* =========================
+       Deduct inventory
+    ========================= */
+
+    await deductStockForOrder(
+      stockItems,
+      createdOrderId,
+      "Stock deducted for cashier takeaway order"
+    );
+
+    stockWasDeducted = true;
+
+    /* =========================
+       Pay Now payment
+    ========================= */
+
+    let paymentId: string | null = null;
+
+    if (
+      paymentType === "PAY_NOW" &&
+      paymentMethod
+    ) {
+      const payment =
+        await Payment.create({
+          order: order._id,
+          amount: totalAmount,
+          method: paymentMethod,
+          status: "PAID",
+          paidAt: new Date(),
+
+          note:
+            paymentNote ||
+            "Paid at takeaway counter",
+        });
+
+      paymentId =
+        payment._id.toString();
+    }
+
+    const pickupNumber =
+      order._id
+        .toString()
+        .slice(-6)
+        .toUpperCase();
 
     await createAuditLog({
-      action: "TAKEAWAY_ORDER_CREATED",
+      action:
+        "TAKEAWAY_ORDER_CREATED",
+
       module: "CASHIER",
-      description: `Takeaway order created for Table ${table.name}`,
-      performedBy: "Cashier",
+
+      description:
+        `${authUser.name} created Takeaway Order #${pickupNumber} ` +
+        `for ${customerName}. Total: Rs. ${totalAmount}.`,
+
+      performedBy:
+        authUser.email,
+
+      metadata: {
+        orderId: createdOrderId,
+        pickupNumber,
+        orderType: "TAKE_AWAY",
+        customerName,
+        customerPhone:
+          customerPhone || null,
+        totalAmount,
+        paymentType,
+        paymentMethod:
+          paymentMethod || null,
+        paymentId,
+      },
     });
 
     return NextResponse.json(
       {
         success: true,
-        message: "Takeaway order created successfully",
+
+        message:
+          paymentType === "PAY_NOW"
+            ? "Takeaway order created and payment completed."
+            : "Takeaway order created. Payment is due at pickup.",
+
         data: {
-          orderId: order._id.toString(),
+          orderId: createdOrderId,
+          pickupNumber,
+
+          orderType: "TAKE_AWAY",
+          table: null,
+
+          customerName,
+          customerPhone,
+
           totalAmount,
-          paymentType: order.paymentType,
+
+          orderStatus: "PENDING",
+          paymentType,
+
+          paymentStatus:
+            paymentType === "PAY_NOW"
+              ? "PAID"
+              : "UNPAID",
+
+          paymentMethod:
+            paymentMethod || null,
+
+          paymentId,
+
+          receiptUrl:
+            paymentType === "PAY_NOW"
+              ? `/cashier/receipt/${createdOrderId}`
+              : null,
         },
       },
-      { status: 201 }
+      {
+        status: 201,
+      }
     );
   } catch (error) {
-    console.error("Takeaway order error:", error);
+    console.error(
+      "Cashier takeaway order error:",
+      error
+    );
+
+    /*
+     * Compensation rollback:
+     *
+     * If payment or another later step fails,
+     * restore deducted inventory and remove
+     * the incomplete order.
+     */
+    if (createdOrderId) {
+      try {
+        await Payment.deleteMany({
+          order: createdOrderId,
+        });
+
+        if (stockWasDeducted) {
+          await restoreStockForOrder(
+            stockItemsForRollback,
+            createdOrderId,
+            "Stock restored because takeaway order creation failed"
+          );
+        }
+
+        await Order.findByIdAndDelete(
+          createdOrderId
+        );
+      } catch (rollbackError) {
+        console.error(
+          "Takeaway rollback error:",
+          rollbackError
+        );
+      }
+    }
+
     return NextResponse.json(
-      { success: false, message: "Failed to create takeaway order" },
-      { status: 500 }
+      {
+        success: false,
+        message:
+          "Failed to create takeaway order.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      },
+      {
+        status: 500,
+      }
     );
   }
 }

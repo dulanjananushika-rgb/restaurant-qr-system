@@ -5,6 +5,9 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 import "@/models/User";
 
+/* =========================
+   Normal menu item schema
+========================= */
 const OrderItemSchema = new Schema(
   {
     menuItem: {
@@ -26,9 +29,14 @@ const OrderItemSchema = new Schema(
       min: 0,
     },
   },
-  { _id: true }
+  {
+    _id: true,
+  }
 );
 
+/* =========================
+   Combo offer item schema
+========================= */
 const OrderComboItemSchema = new Schema(
   {
     comboOffer: {
@@ -83,9 +91,14 @@ const OrderComboItemSchema = new Schema(
       },
     ],
   },
-  { _id: true }
+  {
+    _id: true,
+  }
 );
 
+/* =========================
+   Order status history
+========================= */
 const OrderStatusHistorySchema = new Schema(
   {
     fromStatus: {
@@ -120,6 +133,7 @@ const OrderStatusHistorySchema = new Schema(
       type: String,
       default: "",
       trim: true,
+      maxlength: 500,
     },
 
     changedAt: {
@@ -127,21 +141,28 @@ const OrderStatusHistorySchema = new Schema(
       default: Date.now,
     },
   },
-  { _id: true }
+  {
+    _id: true,
+  }
 );
 
+/* =========================
+   Main order schema
+========================= */
 const OrderSchema = new Schema(
   {
     table: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Table",
       default: null,
+      index: true,
     },
 
     orderType: {
       type: String,
       enum: ["DINE_IN", "TAKE_AWAY", "ONLINE"],
       default: "DINE_IN",
+      index: true,
     },
 
     customerName: {
@@ -185,12 +206,20 @@ const OrderSchema = new Schema(
         "CANCELLED",
       ],
       default: "PENDING",
+      index: true,
     },
 
     paymentStatus: {
       type: String,
-      enum: ["UNPAID", "PENDING", "PAID", "FAILED", "PARTIALLY_PAID"],
+      enum: [
+        "UNPAID",
+        "PENDING",
+        "PAID",
+        "FAILED",
+        "PARTIALLY_PAID",
+      ],
       default: "UNPAID",
+      index: true,
     },
 
     paymentType: {
@@ -200,10 +229,10 @@ const OrderSchema = new Schema(
     },
 
     /*
-      Customer order edit token.
-      This allows the customer to edit only their own order before kitchen acceptance.
-      select: false means it will not be returned by normal queries.
-    */
+     * Customer order edit token.
+     * Customer can edit only their own order
+     * before the kitchen accepts it.
+     */
     customerEditToken: {
       type: String,
       default: "",
@@ -211,12 +240,50 @@ const OrderSchema = new Schema(
     },
 
     /*
-      Kept for old data compatibility.
-      Current final kitchen flow is team-based, not chef-assigned.
-    */
+     * Kept for old data compatibility.
+     * Kitchen workflow may be team-based.
+     */
     assignedChef: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
+    },
+
+    /*
+     * Waiter who claimed and handles this order.
+     * null means no waiter has claimed it yet.
+     */
+    assignedWaiter: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
+    /*
+     * Time when the waiter claimed the order.
+     */
+    waiterClaimedAt: {
+      type: Date,
+      default: null,
+    },
+
+    /*
+     * How the waiter received the order.
+     *
+     * PRIMARY:
+     * Primary table waiter claimed within 4 minutes.
+     *
+     * BACKUP:
+     * Another waiter claimed after the 4-minute timeout
+     * or because the primary waiter was unavailable.
+     *
+     * SHARED:
+     * Order came from an unassigned/shared table.
+     */
+    waiterClaimType: {
+      type: String,
+      enum: ["PRIMARY", "BACKUP", "SHARED"],
       default: null,
     },
 
@@ -230,6 +297,10 @@ const OrderSchema = new Schema(
       default: null,
     },
 
+    /*
+     * Four-minute waiter response timer starts
+     * from this time.
+     */
     readyAt: {
       type: Date,
       default: null,
@@ -255,14 +326,26 @@ const OrderSchema = new Schema(
       default: [],
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 /*
-  IMPORTANT:
-  Next.js dev server + Mongoose sometimes keeps the old compiled model.
-  This forces Order model to recompile with new fields like customerEditToken.
-*/
+ * Helpful index for waiter dashboard queries.
+ */
+OrderSchema.index({
+  status: 1,
+  assignedWaiter: 1,
+  readyAt: 1,
+  createdAt: -1,
+});
+
+/*
+ * Next.js development server may keep an old
+ * compiled Mongoose model. Recompile the model
+ * so new fields are recognized.
+ */
 if (models.Order) {
   delete models.Order;
 }
