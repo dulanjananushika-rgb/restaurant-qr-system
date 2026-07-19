@@ -31,6 +31,11 @@ const menuItems = [
   { name: "Combo Offers", icon: Gift, href: "/admin/combo-offers" },
   { name: "Categories", icon: FolderOpen, href: "/admin/categories" },
   { name: "Tables & QR", icon: QrCode, href: "/admin/tables" },
+  {
+  name: "Takeaway QR",
+  icon: QrCode,
+  href: "/admin/takeaway-qr",
+},
 
   {
   name: "Waiter Assignments",

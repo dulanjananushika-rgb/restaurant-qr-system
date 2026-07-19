@@ -2,17 +2,32 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
 import {
   Banknote,
   CheckCircle2,
-  Clock,
+  Clock3,
   CreditCard,
   Loader2,
   ReceiptText,
   RefreshCw,
   Smartphone,
+  UtensilsCrossed,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+
+import {
+  useEffect,
+  useState,
+} from "react";
+
+/* =========================
+   Types
+========================= */
+
+type PaymentMethod =
+  | "CASH"
+  | "CARD"
+  | "ONLINE";
 
 type TableData = {
   _id: string;
@@ -26,7 +41,9 @@ type MenuItemData = {
 
 type OrderItem = {
   _id: string;
-  menuItem?: MenuItemData;
+
+  menuItem?: MenuItemData | null;
+
   quantity: number;
   price: number;
 };
@@ -39,481 +56,1150 @@ type ComboSnapshotItem = {
 
 type ComboItem = {
   _id: string;
+
   comboOffer?: {
     _id: string;
     name: string;
-  };
+  } | null;
+
   quantity: number;
   price: number;
   originalPrice: number;
-  comboItemsSnapshot: ComboSnapshotItem[];
+
+  comboItemsSnapshot?: ComboSnapshotItem[];
 };
 
 type Order = {
   _id: string;
-  table?: TableData;
+
+  table?: TableData | null;
+
+  orderType:
+    | "DINE_IN"
+    | "TAKE_AWAY"
+    | "ONLINE";
+
   customerName?: string;
   customerPhone?: string;
+
   items: OrderItem[];
   comboItems?: ComboItem[];
+
   totalAmount: number;
-  status: string;
-  paymentStatus: string;
-  paymentType: string;
+
+  status:
+    | "PENDING"
+    | "ACCEPTED"
+    | "PREPARING"
+    | "READY"
+    | "PICKED_UP"
+    | "DELIVERED"
+    | "CANCELLED";
+
+  paymentStatus:
+    | "UNPAID"
+    | "PENDING"
+    | "PAID"
+    | "FAILED"
+    | "PARTIALLY_PAID";
+
+  paymentType:
+    | "PAY_NOW"
+    | "PAY_LATER";
+
   createdAt: string;
 };
 
+type SessionBill = {
+  diningSessionId: string;
+
+  table?: TableData | null;
+
+  orders: Order[];
+
+  totalAmount: number;
+  allDelivered: boolean;
+  createdAt: string;
+};
+
+type PaymentOrderReference =
+  | string
+  | {
+      _id: string;
+      table?: TableData | null;
+    };
+
+type DiningSessionReference =
+  | string
+  | {
+      _id: string;
+      table?: TableData | null;
+    };
+
 type Payment = {
   _id: string;
-  order?: {
-    _id: string;
-    table?: TableData;
-    totalAmount?: number;
-  };
+
+  order?: PaymentOrderReference | null;
+  orders?: PaymentOrderReference[];
+
+  diningSession?: DiningSessionReference | null;
+
   amount: number;
-  method: "CASH" | "CARD" | "ONLINE";
+  method: PaymentMethod;
   status: string;
-  paidAt: string;
+
+  paidAt?: string;
+  createdAt?: string;
+
   note?: string;
 };
 
+type PaymentResponse = {
+  success: boolean;
+  message?: string;
+
+  data?: {
+    paymentId: string;
+
+    orderId?: string;
+    diningSessionId?: string;
+
+    orderIds?: string[];
+    orderCount?: number;
+
+    amount: number;
+    method: PaymentMethod;
+    paymentStatus: "PAID";
+
+    receiptUrl?: string;
+  };
+};
+
+/* =========================
+   Helpers
+========================= */
+
 function formatCurrency(amount: number) {
-  return `Rs. ${Number(amount || 0).toLocaleString("en-US")}`;
+  return `Rs. ${Number(
+    amount || 0
+  ).toLocaleString("en-LK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
-function methodIcon(method: string) {
-  if (method === "CASH") return Banknote;
-  if (method === "CARD") return CreditCard;
+function formatDateTime(
+  value?: string | null
+) {
+  if (!value) {
+    return "Not available";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Not available";
+  }
+
+  return new Intl.DateTimeFormat("en-LK", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function methodIcon(
+  method: PaymentMethod
+) {
+  if (method === "CASH") {
+    return Banknote;
+  }
+
+  if (method === "CARD") {
+    return CreditCard;
+  }
+
   return Smartphone;
 }
 
+function getOrderNumber(
+  orderId: string
+) {
+  return orderId
+    .slice(-6)
+    .toUpperCase();
+}
+
+function getReferenceId(
+  reference?:
+    | PaymentOrderReference
+    | DiningSessionReference
+    | null
+) {
+  if (!reference) {
+    return "";
+  }
+
+  if (typeof reference === "string") {
+    return reference;
+  }
+
+  return reference._id || "";
+}
+
+function getPaymentOrderCount(
+  payment: Payment
+) {
+  if (
+    Array.isArray(payment.orders) &&
+    payment.orders.length > 0
+  ) {
+    return payment.orders.length;
+  }
+
+  return payment.order ? 1 : 0;
+}
+
+/* =========================
+   Main component
+========================= */
+
 export default function CashierPaymentManager({
-  unpaidOrders,
+  sessionBills,
+  singleOrders,
   payments,
 }: {
-  unpaidOrders: Order[];
+  sessionBills: SessionBill[];
+  singleOrders: Order[];
   payments: Payment[];
 }) {
   const router = useRouter();
 
-  const [selectedMethods, setSelectedMethods] = useState<
-    Record<string, "CASH" | "CARD" | "ONLINE">
+  const [
+    selectedMethods,
+    setSelectedMethods,
+  ] = useState<
+    Record<string, PaymentMethod>
   >({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [loadingOrderId, setLoadingOrderId] = useState("");
-  const [error, setError] = useState("");
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+
+  const [notes, setNotes] =
+    useState<Record<string, string>>({});
+
+  const [loadingKey, setLoadingKey] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [success, setSuccess] =
+    useState("");
+
+  const [receiptUrl, setReceiptUrl] =
+    useState("");
+
+  const [
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
+  ] = useState(true);
+
+  /* =========================
+     Automatic refresh
+  ========================= */
 
   useEffect(() => {
-    if (!autoRefreshEnabled) return;
+    if (!autoRefreshEnabled) {
+      return;
+    }
 
-    const interval = setInterval(() => {
-      router.refresh();
-    }, 5000);
+    const intervalId =
+      window.setInterval(() => {
+        router.refresh();
+      }, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [autoRefreshEnabled, router]);
 
-  async function settlePayment(order: Order) {
-    const confirmed = confirm(
-      `Settle payment for Order #${order._id
-        .slice(-6)
-        .toUpperCase()} - ${formatCurrency(order.totalAmount)}?`
-    );
+  /* =========================
+     Payment request
+  ========================= */
 
-    if (!confirmed) return;
+  async function submitPayment({
+    key,
+    payload,
+    confirmation,
+  }: {
+    key: string;
+
+    payload: {
+      orderId?: string;
+      diningSessionId?: string;
+    };
+
+    confirmation: string;
+  }) {
+    const confirmed =
+      window.confirm(confirmation);
+
+    if (!confirmed) {
+      return;
+    }
 
     setError("");
-    setLoadingOrderId(order._id);
+    setSuccess("");
+    setReceiptUrl("");
+    setLoadingKey(key);
 
-    const method = selectedMethods[order._id] || "CASH";
+    const paymentMethod =
+      selectedMethods[key] || "CASH";
 
     try {
-      const response = await fetch("/api/cashier/payments", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          orderId: order._id,
-          method,
-          amount: order.totalAmount,
-          note: notes[order._id] || "",
-        }),
-      });
+      const response = await fetch(
+        "/api/cashier/payments",
+        {
+          method: "POST",
 
-      const result = await response.json();
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
 
-      if (!response.ok || !result.success) {
-        setError(result.message || "Failed to settle payment");
-        return;
+          body: JSON.stringify({
+            ...payload,
+
+            method: paymentMethod,
+
+            note:
+              notes[key]?.trim() || "",
+          }),
+        }
+      );
+
+      const result =
+        (await response
+          .json()
+          .catch(() => ({
+            success: false,
+            message:
+              "The server returned an invalid response.",
+          }))) as PaymentResponse;
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+        throw new Error(
+          result.message ||
+            "Failed to settle the payment."
+        );
       }
 
-      setNotes((current) => ({
-        ...current,
-        [order._id]: "",
-      }));
+      setSuccess(
+        result.message ||
+          "Payment settled successfully."
+      );
+
+      setReceiptUrl(
+        result.data?.receiptUrl || ""
+      );
+
+      setNotes((current) => {
+        const updated = {
+          ...current,
+        };
+
+        delete updated[key];
+
+        return updated;
+      });
 
       router.refresh();
-    } catch {
-      setError("Something went wrong while settling payment.");
+    } catch (paymentError) {
+      console.error(
+        "Payment settlement error:",
+        paymentError
+      );
+
+      setError(
+        paymentError instanceof Error
+          ? paymentError.message
+          : "Failed to settle the payment."
+      );
     } finally {
-      setLoadingOrderId("");
+      setLoadingKey("");
     }
   }
 
+  /* =========================
+     Payment input controls
+  ========================= */
+
+  function renderMethodAndNote(
+    key: string,
+    disabled: boolean
+  ) {
+    return (
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div>
+          <label
+            htmlFor={`method-${key}`}
+            className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500"
+          >
+            Payment Method
+          </label>
+
+          <select
+            id={`method-${key}`}
+            value={
+              selectedMethods[key] ||
+              "CASH"
+            }
+            disabled={disabled}
+            onChange={(event) =>
+              setSelectedMethods(
+                (current) => ({
+                  ...current,
+
+                  [key]:
+                    event.target
+                      .value as PaymentMethod,
+                })
+              )
+            }
+            className="w-full rounded-xl border border-white/10 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="CASH">
+              Cash
+            </option>
+
+            <option value="CARD">
+              Card
+            </option>
+
+            <option value="ONLINE">
+              Online
+            </option>
+          </select>
+        </div>
+
+        <div>
+          <label
+            htmlFor={`note-${key}`}
+            className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-500"
+          >
+            Payment Note
+          </label>
+
+          <input
+            id={`note-${key}`}
+            type="text"
+            value={notes[key] || ""}
+            disabled={disabled}
+            maxLength={500}
+            placeholder="Cash received or card reference"
+            onChange={(event) =>
+              setNotes((current) => ({
+                ...current,
+
+                [key]:
+                  event.target.value,
+              }))
+            }
+            className="w-full rounded-xl border border-white/10 bg-[#0b0f14] px-4 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  /* =========================
+     Order items
+  ========================= */
+
+  function renderOrderItems(
+    order: Order
+  ) {
+    const hasItems =
+      Array.isArray(order.items) &&
+      order.items.length > 0;
+
+    const hasCombos =
+      Array.isArray(
+        order.comboItems
+      ) &&
+      order.comboItems.length > 0;
+
+    return (
+      <div className="mt-3 space-y-2">
+        {order.items?.map((item) => (
+          <div
+            key={item._id}
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <span className="text-neutral-400">
+              {item.menuItem?.name ||
+                "Menu item"}{" "}
+              × {item.quantity}
+            </span>
+
+            <span className="font-medium text-white">
+              {formatCurrency(
+                item.price *
+                  item.quantity
+              )}
+            </span>
+          </div>
+        ))}
+
+        {order.comboItems?.map(
+          (combo) => (
+            <div
+              key={combo._id}
+              className="rounded-lg border border-amber-500/10 bg-amber-500/[0.04] px-3 py-2"
+            >
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium text-amber-200">
+                  {combo.comboOffer?.name ||
+                    "Combo offer"}{" "}
+                  × {combo.quantity}
+                </span>
+
+                <span className="font-medium text-white">
+                  {formatCurrency(
+                    combo.price *
+                      combo.quantity
+                  )}
+                </span>
+              </div>
+
+              {combo
+                .comboItemsSnapshot &&
+                combo
+                  .comboItemsSnapshot
+                  .length > 0 && (
+                  <div className="mt-2 space-y-1 text-xs text-neutral-500">
+                    {combo.comboItemsSnapshot.map(
+                      (
+                        snapshot,
+                        index
+                      ) => (
+                        <p
+                          key={`${combo._id}-${index}`}
+                        >
+                          • {snapshot.name} ×{" "}
+                          {snapshot.quantity}
+                        </p>
+                      )
+                    )}
+                  </div>
+                )}
+            </div>
+          )
+        )}
+
+        {!hasItems && !hasCombos && (
+          <p className="text-sm text-neutral-500">
+            No order items were found.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  /* =========================
+     UI
+  ========================= */
+
   return (
-    <div className="space-y-6">
+    <section className="space-y-8">
+      {/* Live refresh controls */}
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-semibold text-white">
+            Cashier live screen
+          </p>
+
+          <p className="mt-1 text-sm text-neutral-500">
+            Bills and payment history refresh
+            every five seconds.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              router.refresh()
+            }
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm font-semibold text-neutral-300 transition hover:border-white/20 hover:text-white"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh Now
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setAutoRefreshEnabled(
+                (current) => !current
+              )
+            }
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+              autoRefreshEnabled
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                : "border-white/10 bg-black/20 text-neutral-400"
+            }`}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${
+                autoRefreshEnabled
+                  ? "animate-spin"
+                  : ""
+              }`}
+            />
+
+            {autoRefreshEnabled
+              ? "Auto Refresh ON"
+              : "Auto Refresh OFF"}
+          </button>
+        </div>
+      </div>
+
+      {/* Error */}
       {error && (
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div
+          role="alert"
+          className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+        >
           {error}
         </div>
       )}
 
-      <section className="flex flex-col justify-between gap-3 rounded-[24px] border border-white/10 bg-white/[0.03] p-4 md:flex-row md:items-center">
-        <div>
-          <div className="flex items-center gap-2">
-            <RefreshCw size={18} className="text-emerald-300" />
-            <p className="text-sm font-semibold">Cashier live screen</p>
-          </div>
+      {/* Success and receipt */}
+      {success && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
 
-          <p className="mt-1 text-xs text-neutral-500">
-            Orders and payment records auto refresh every 5 seconds.
+            <div>
+              <p className="text-sm text-emerald-200">
+                {success}
+              </p>
+
+              {receiptUrl && (
+                <Link
+                  href={receiptUrl}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-black transition hover:bg-neutral-200"
+                >
+                  <ReceiptText className="h-4 w-4" />
+
+                  View and Print Receipt
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================
+          Combined table bills
+      ====================== */}
+
+      <div>
+        <div className="mb-4">
+          <h2 className="text-xl font-semibold text-white">
+            Combined Table Bills
+          </h2>
+
+          <p className="mt-1 text-sm text-neutral-500">
+            All unpaid orders from the same
+            dining session are displayed as
+            one final table bill.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setAutoRefreshEnabled((current) => !current)}
-          className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
-            autoRefreshEnabled
-              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-              : "border-white/10 bg-black/20 text-neutral-400"
-          }`}
-        >
-          {autoRefreshEnabled ? "Auto refresh ON" : "Auto refresh OFF"}
-        </button>
-      </section>
+        <div className="grid gap-5 xl:grid-cols-2">
+          {sessionBills.map((bill) => {
+            const key =
+              `session:${bill.diningSessionId}`;
 
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
-          <div className="mb-5">
-            <h2 className="text-lg font-semibold">Unpaid Orders</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Settle unpaid customer orders and record payment method.
-            </p>
-          </div>
+            const isLoading =
+              loadingKey === key;
 
-          <div className="space-y-4">
-            {unpaidOrders.map((order) => {
-              const isLoading = loadingOrderId === order._id;
+            return (
+              <article
+                key={
+                  bill.diningSessionId
+                }
+                className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-5"
+              >
+                {/* Bill heading */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300">
+                      Combined Dining Bill
+                    </p>
 
-              return (
-                <article
-                  key={order._id}
-                  className="rounded-[26px] border border-white/10 bg-black/20 p-4"
-                >
-                  <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-semibold">
-                          Order #{order._id.slice(-6).toUpperCase()}
-                        </h3>
+                    <h3 className="mt-2 text-xl font-bold text-white">
+                      {bill.table?.name ||
+                        "Dining Table"}
+                    </h3>
 
-                        <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300">
-                          {order.paymentStatus}
-                        </span>
-
-                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-neutral-300">
-                          {order.status}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-neutral-500">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock size={13} />
-                          {new Date(order.createdAt).toLocaleString()}
-                        </span>
-
-                        <span>{order.table?.name || "No table"}</span>
-                        <span>{order.paymentType}</span>
-                      </div>
-
-                      {(order.customerName || order.customerPhone) && (
-                        <p className="mt-2 text-sm text-neutral-400">
-                          Customer: {order.customerName || "N/A"}{" "}
-                          {order.customerPhone
-                            ? `• ${order.customerPhone}`
-                            : ""}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-5 py-4">
-                      <p className="text-xs text-neutral-400">Amount Due</p>
-                      <p className="mt-1 text-2xl font-semibold text-emerald-300">
-                        {formatCurrency(order.totalAmount)}
-                      </p>
-                    </div>
+                    <p className="mt-1 text-sm text-neutral-500">
+                      {bill.orders.length}{" "}
+                      {bill.orders.length === 1
+                        ? "order"
+                        : "orders"}{" "}
+                      in this dining session
+                    </p>
                   </div>
 
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="mb-3 flex items-center gap-2">
-                        <ReceiptText size={17} className="text-emerald-300" />
-                        <p className="text-sm font-semibold">Menu Items</p>
-                      </div>
+                  <div className="text-left sm:text-right">
+                    <p className="text-xs text-neutral-500">
+                      Combined Total
+                    </p>
 
-                      <div className="space-y-2">
-                        {order.items?.map((item) => (
-                          <div
-                            key={item._id}
-                            className="flex items-center justify-between rounded-xl bg-black/20 px-3 py-2"
-                          >
-                            <div>
-                              <p className="text-sm">
-                                {item.menuItem?.name || "Menu item"}
-                              </p>
-                              <p className="text-xs text-neutral-500">
-                                Rs. {item.price} × {item.quantity}
-                              </p>
-                            </div>
-
-                            <p className="text-sm font-semibold">
-                              {formatCurrency(item.price * item.quantity)}
-                            </p>
-                          </div>
-                        ))}
-
-                        {(!order.items || order.items.length === 0) && (
-                          <p className="text-sm text-neutral-500">
-                            No direct menu items.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="mb-3 flex items-center gap-2">
-                        <CheckCircle2 size={17} className="text-amber-300" />
-                        <p className="text-sm font-semibold">Combo Items</p>
-                      </div>
-
-                      <div className="space-y-2">
-                        {order.comboItems?.map((combo) => (
-                          <div
-                            key={combo._id}
-                            className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-emerald-100">
-                                  {combo.comboOffer?.name || "Combo offer"}
-                                </p>
-                                <p className="mt-1 text-xs text-neutral-400">
-                                  Rs. {combo.price} × {combo.quantity}
-                                </p>
-                              </div>
-
-                              <p className="text-sm font-semibold text-emerald-300">
-                                {formatCurrency(combo.price * combo.quantity)}
-                              </p>
-                            </div>
-
-                            <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
-                              {combo.comboItemsSnapshot?.map(
-                                (snapshot, index) => (
-                                  <p
-                                    key={`${combo._id}-${index}`}
-                                    className="text-xs text-neutral-400"
-                                  >
-                                    • {snapshot.name} × {snapshot.quantity}
-                                  </p>
-                                )
-                              )}
-                            </div>
-                          </div>
-                        ))}
-
-                        {(!order.comboItems ||
-                          order.comboItems.length === 0) && (
-                          <p className="text-sm text-neutral-500">
-                            No combo items.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 md:grid-cols-[0.7fr_1fr_auto] md:items-end">
-                    <label className="block">
-                      <span className="mb-2 block text-xs text-neutral-500">
-                        Payment Method
-                      </span>
-
-                      <select
-                        value={selectedMethods[order._id] || "CASH"}
-                        onChange={(event) =>
-                          setSelectedMethods((current) => ({
-                            ...current,
-                            [order._id]: event.target.value as
-                              | "CASH"
-                              | "CARD"
-                              | "ONLINE",
-                          }))
-                        }
-                        disabled={isLoading}
-                        className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none disabled:opacity-50"
-                      >
-                        <option className="bg-[#0B0F14]" value="CASH">
-                          CASH
-                        </option>
-                        <option className="bg-[#0B0F14]" value="CARD">
-                          CARD
-                        </option>
-                        <option className="bg-[#0B0F14]" value="ONLINE">
-                          ONLINE
-                        </option>
-                      </select>
-                    </label>
-
-                    <label className="block">
-                      <span className="mb-2 block text-xs text-neutral-500">
-                        Note optional
-                      </span>
-
-                      <input
-                        value={notes[order._id] || ""}
-                        onChange={(event) =>
-                          setNotes((current) => ({
-                            ...current,
-                            [order._id]: event.target.value,
-                          }))
-                        }
-                        disabled={isLoading}
-                        placeholder="Cash received / card reference"
-                        className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none placeholder:text-neutral-600 disabled:opacity-50"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      disabled={isLoading}
-                      onClick={() => settlePayment(order)}
-                      className="flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isLoading ? (
-                        <Loader2 size={17} className="animate-spin" />
-                      ) : (
-                        <CheckCircle2 size={17} />
+                    <p className="mt-1 text-2xl font-bold text-emerald-200">
+                      {formatCurrency(
+                        bill.totalAmount
                       )}
-                      {isLoading ? "Settling..." : "Settle"}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-
-            {unpaidOrders.length === 0 && (
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-10 text-center">
-                <CheckCircle2
-                  className="mx-auto mb-3 text-emerald-300"
-                  size={38}
-                />
-                <p className="text-sm text-neutral-400">
-                  No unpaid orders right now.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
-          <div className="mb-5">
-            <h2 className="text-lg font-semibold">Recent Payments</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Latest settled payment records and receipt access.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {payments.map((payment) => {
-              const Icon = methodIcon(payment.method);
-
-              return (
-                <div
-                  key={payment._id}
-                  className="rounded-2xl border border-white/10 bg-black/20 p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
-                      <Icon size={18} />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold">
-                            {formatCurrency(payment.amount)}
-                          </p>
-
-                          <p className="mt-1 text-xs text-neutral-500">
-                            {payment.method} • {payment.status}
-                          </p>
-                        </div>
-
-                        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-300">
-                          PAID
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-xs text-neutral-500">
-                        Order #
-                        {payment.order?._id
-                          ? payment.order._id.slice(-6).toUpperCase()
-                          : "N/A"}{" "}
-                        • {payment.order?.table?.name || "No table"}
-                      </p>
-
-                      <p className="mt-1 text-xs text-neutral-600">
-                        {new Date(payment.paidAt).toLocaleString()}
-                      </p>
-
-                      {payment.order?._id && (
-                        <Link
-                          href={`/cashier/receipt/${payment.order._id}`}
-                          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs font-semibold text-neutral-300 transition hover:bg-white/10 hover:text-white"
-                        >
-                          <ReceiptText size={15} />
-                          View / Print Receipt
-                        </Link>
-                      )}
-
-                      {payment.note && (
-                        <p className="mt-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-neutral-400">
-                          {payment.note}
-                        </p>
-                      )}
-                    </div>
+                    </p>
                   </div>
                 </div>
-              );
-            })}
 
-            {payments.length === 0 && (
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-10 text-center">
-                <CreditCard
-                  className="mx-auto mb-3 text-neutral-600"
-                  size={36}
-                />
-                <p className="text-sm text-neutral-500">
-                  No payments recorded yet.
-                </p>
-              </div>
-            )}
-          </div>
+                {/* Orders inside session */}
+                <div className="mt-5 space-y-4">
+                  {bill.orders.map(
+                    (order) => (
+                      <div
+                        key={order._id}
+                        className="rounded-xl border border-white/10 bg-black/20 p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-white">
+                              Order #
+                              {getOrderNumber(
+                                order._id
+                              )}
+                            </p>
+
+                            <p className="mt-1 text-xs text-neutral-500">
+                              {formatDateTime(
+                                order.createdAt
+                              )}
+                            </p>
+
+                            {(order.customerName ||
+                              order.customerPhone) && (
+                              <p className="mt-2 text-xs text-neutral-500">
+                                Customer:{" "}
+                                {order.customerName ||
+                                  "N/A"}
+
+                                {order.customerPhone
+                                  ? ` • ${order.customerPhone}`
+                                  : ""}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="text-right">
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                order.status ===
+                                "DELIVERED"
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                  : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                              }`}
+                            >
+                              {order.status.replaceAll(
+                                "_",
+                                " "
+                              )}
+                            </span>
+
+                            <p className="mt-2 font-semibold text-white">
+                              {formatCurrency(
+                                order.totalAmount
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {renderOrderItems(
+                          order
+                        )}
+                      </div>
+                    )
+                  )}
+                </div>
+
+                {/* Delivery warning */}
+                {!bill.allDelivered && (
+                  <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.08] p-4 text-sm text-amber-200">
+                    <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
+
+                    <p>
+                      All orders from this
+                      table must be delivered
+                      before settling the final
+                      combined bill.
+                    </p>
+                  </div>
+                )}
+
+                {renderMethodAndNote(
+                  key,
+                  isLoading ||
+                    !bill.allDelivered
+                )}
+
+                <button
+                  type="button"
+                  disabled={
+                    isLoading ||
+                    !bill.allDelivered
+                  }
+                  onClick={() =>
+                    void submitPayment({
+                      key,
+
+                      payload: {
+                        diningSessionId:
+                          bill.diningSessionId,
+                      },
+
+                      confirmation:
+                        `Settle the combined bill for ` +
+                        `${bill.table?.name || "this table"}?\n\n` +
+                        `${bill.orders.length} orders\n` +
+                        `${formatCurrency(bill.totalAmount)}`,
+                    })
+                  }
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <UtensilsCrossed className="h-5 w-5" />
+                  )}
+
+                  {isLoading
+                    ? "Settling Combined Bill..."
+                    : bill.allDelivered
+                      ? "Settle Combined Bill"
+                      : "Waiting for Delivery"}
+                </button>
+              </article>
+            );
+          })}
+
+          {sessionBills.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-neutral-500 xl:col-span-2">
+              No unpaid combined table bills
+              are available.
+            </div>
+          )}
         </div>
-      </section>
-    </div>
+      </div>
+
+      {/* =====================
+          Individual orders
+      ====================== */}
+
+      <div>
+        <div className="mb-4">
+          <h2 className="text-xl font-semibold text-white">
+            Individual Orders
+          </h2>
+
+          <p className="mt-1 text-sm text-neutral-500">
+            Takeaway orders and older dine-in
+            orders without a dining session
+            are settled individually.
+          </p>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-2">
+          {singleOrders.map((order) => {
+            const key =
+              `order:${order._id}`;
+
+            const isLoading =
+              loadingKey === key;
+
+            const canSettle =
+              order.orderType !==
+                "DINE_IN" ||
+              order.status ===
+                "DELIVERED";
+
+            return (
+              <article
+                key={order._id}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-300">
+                      {order.orderType ===
+                      "TAKE_AWAY"
+                        ? "Takeaway Order"
+                        : order.orderType ===
+                            "ONLINE"
+                          ? "Online Order"
+                          : "Legacy Dine-in Order"}
+                    </p>
+
+                    <h3 className="mt-2 text-lg font-bold text-white">
+                      Order #
+                      {getOrderNumber(
+                        order._id
+                      )}
+                    </h3>
+
+                    <p className="mt-1 text-sm text-neutral-500">
+                      {order.table?.name ||
+                        "Counter Pickup"}
+                    </p>
+
+                    <p className="mt-1 text-xs text-neutral-600">
+                      {formatDateTime(
+                        order.createdAt
+                      )}
+                    </p>
+                  </div>
+
+                  <p className="text-xl font-bold text-white">
+                    {formatCurrency(
+                      order.totalAmount
+                    )}
+                  </p>
+                </div>
+
+                {(order.customerName ||
+                  order.customerPhone) && (
+                  <p className="mt-3 text-sm text-neutral-400">
+                    Customer:{" "}
+                    {order.customerName ||
+                      "N/A"}
+
+                    {order.customerPhone
+                      ? ` • ${order.customerPhone}`
+                      : ""}
+                  </p>
+                )}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-neutral-300">
+                    {order.status.replaceAll(
+                      "_",
+                      " "
+                    )}
+                  </span>
+
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-neutral-300">
+                    {order.paymentStatus.replaceAll(
+                      "_",
+                      " "
+                    )}
+                  </span>
+
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-neutral-300">
+                    {order.paymentType.replaceAll(
+                      "_",
+                      " "
+                    )}
+                  </span>
+                </div>
+
+                {renderOrderItems(order)}
+
+                {!canSettle && (
+                  <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.08] px-4 py-3 text-sm text-amber-200">
+                    Deliver this dine-in order
+                    before settling payment.
+                  </div>
+                )}
+
+                {renderMethodAndNote(
+                  key,
+                  isLoading ||
+                    !canSettle
+                )}
+
+                <button
+                  type="button"
+                  disabled={
+                    isLoading ||
+                    !canSettle
+                  }
+                  onClick={() =>
+                    void submitPayment({
+                      key,
+
+                      payload: {
+                        orderId:
+                          order._id,
+                      },
+
+                      confirmation:
+                        `Settle Order #${getOrderNumber(order._id)} ` +
+                        `for ${formatCurrency(order.totalAmount)}?`,
+                    })
+                  }
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Banknote className="h-5 w-5" />
+                  )}
+
+                  {isLoading
+                    ? "Settling..."
+                    : "Settle Payment"}
+                </button>
+              </article>
+            );
+          })}
+
+          {singleOrders.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-neutral-500 xl:col-span-2">
+              No unpaid individual orders are
+              available.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* =====================
+          Recent payments
+      ====================== */}
+
+      <div>
+        <div className="mb-4">
+          <h2 className="text-xl font-semibold text-white">
+            Recent Payments
+          </h2>
+
+          <p className="mt-1 text-sm text-neutral-500">
+            Latest individual and combined
+            payment records.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {payments.map((payment) => {
+            const Icon = methodIcon(
+              payment.method
+            );
+
+            const sessionId =
+              getReferenceId(
+                payment.diningSession
+              );
+
+            const singleOrderId =
+              getReferenceId(
+                payment.order
+              );
+
+            const orderCount =
+              getPaymentOrderCount(
+                payment
+              );
+
+            const isCombined =
+              Boolean(sessionId) ||
+              orderCount > 1;
+
+            const paymentDate =
+              payment.paidAt ||
+              payment.createdAt ||
+              "";
+
+            return (
+              <div
+                key={payment._id}
+                className="flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 lg:flex-row lg:items-center lg:justify-between"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-emerald-300">
+                    <Icon className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <p className="font-semibold text-white">
+                      {formatCurrency(
+                        payment.amount
+                      )}
+                    </p>
+
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {payment.method} •{" "}
+                      {payment.status}
+                    </p>
+
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {isCombined
+                        ? `${orderCount} order combined bill`
+                        : singleOrderId
+                          ? `Order #${getOrderNumber(singleOrderId)}`
+                          : "Payment record"}
+                    </p>
+
+                    <p className="mt-1 text-xs text-neutral-600">
+                      {formatDateTime(
+                        paymentDate
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 lg:items-end">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {singleOrderId && (
+                      <Link
+                        href={`/cashier/receipt/${singleOrderId}`}
+                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:border-white/20"
+                      >
+                        <ReceiptText className="h-4 w-4" />
+
+                        Receipt
+                      </Link>
+                    )}
+
+                    {sessionId && (
+                      <Link
+                        href={`/cashier/receipt/session/${sessionId}`}
+                        className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-2 text-xs font-semibold text-emerald-300 transition hover:border-emerald-400/40 hover:bg-emerald-500/[0.12]"
+                      >
+                        <ReceiptText className="h-4 w-4" />
+
+                        Combined Receipt
+                      </Link>
+                    )}
+                  </div>
+
+                  {payment.note && (
+                    <p className="max-w-sm text-xs text-neutral-500">
+                      Note: {payment.note}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {payments.length === 0 && (
+            <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-sm text-neutral-500">
+              No payments have been recorded.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

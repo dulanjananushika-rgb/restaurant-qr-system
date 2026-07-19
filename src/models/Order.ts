@@ -4,10 +4,12 @@ import "@/models/Table";
 import "@/models/MenuItem";
 import "@/models/ComboOffer";
 import "@/models/User";
+import "@/models/DiningSession";
 
 /* =========================
-   Normal menu item schema
+   Normal order menu item
 ========================= */
+
 const OrderItemSchema = new Schema(
   {
     menuItem: {
@@ -35,8 +37,44 @@ const OrderItemSchema = new Schema(
 );
 
 /* =========================
-   Combo offer item schema
+   Combo item snapshot
 ========================= */
+
+const ComboItemSnapshotSchema = new Schema(
+  {
+    menuItem: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MenuItem",
+      required: true,
+    },
+
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+
+    priceSnapshot: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  {
+    _id: false,
+  }
+);
+
+/* =========================
+   Ordered combo item
+========================= */
+
 const OrderComboItemSchema = new Schema(
   {
     comboOffer: {
@@ -64,32 +102,10 @@ const OrderComboItemSchema = new Schema(
       min: 0,
     },
 
-    comboItemsSnapshot: [
-      {
-        menuItem: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "MenuItem",
-          required: true,
-        },
-
-        name: {
-          type: String,
-          required: true,
-        },
-
-        quantity: {
-          type: Number,
-          required: true,
-          min: 1,
-        },
-
-        priceSnapshot: {
-          type: Number,
-          required: true,
-          min: 0,
-        },
-      },
-    ],
+    comboItemsSnapshot: {
+      type: [ComboItemSnapshotSchema],
+      default: [],
+    },
   },
   {
     _id: true,
@@ -99,6 +115,7 @@ const OrderComboItemSchema = new Schema(
 /* =========================
    Order status history
 ========================= */
+
 const OrderStatusHistorySchema = new Schema(
   {
     fromStatus: {
@@ -147,13 +164,31 @@ const OrderStatusHistorySchema = new Schema(
 );
 
 /* =========================
-   Main order schema
+   Main Order schema
 ========================= */
+
 const OrderSchema = new Schema(
   {
+    /*
+     * Dine-in orders have a table.
+     * Takeaway orders use table = null.
+     */
     table: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Table",
+      default: null,
+      index: true,
+    },
+
+    /*
+     * All orders placed during one table visit
+     * are connected to the same dining session.
+     *
+     * Takeaway orders use diningSession = null.
+     */
+    diningSession: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DiningSession",
       default: null,
       index: true,
     },
@@ -196,6 +231,7 @@ const OrderSchema = new Schema(
 
     status: {
       type: String,
+
       enum: [
         "PENDING",
         "ACCEPTED",
@@ -205,12 +241,14 @@ const OrderSchema = new Schema(
         "DELIVERED",
         "CANCELLED",
       ],
+
       default: "PENDING",
       index: true,
     },
 
     paymentStatus: {
       type: String,
+
       enum: [
         "UNPAID",
         "PENDING",
@@ -218,6 +256,7 @@ const OrderSchema = new Schema(
         "FAILED",
         "PARTIALLY_PAID",
       ],
+
       default: "UNPAID",
       index: true,
     },
@@ -229,9 +268,8 @@ const OrderSchema = new Schema(
     },
 
     /*
-     * Customer order edit token.
-     * Customer can edit only their own order
-     * before the kitchen accepts it.
+     * Used to allow customers to edit or cancel
+     * only their own pending order.
      */
     customerEditToken: {
       type: String,
@@ -239,10 +277,6 @@ const OrderSchema = new Schema(
       select: false,
     },
 
-    /*
-     * Kept for old data compatibility.
-     * Kitchen workflow may be team-based.
-     */
     assignedChef: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -250,8 +284,10 @@ const OrderSchema = new Schema(
     },
 
     /*
-     * Waiter who claimed and handles this order.
-     * null means no waiter has claimed it yet.
+     * Waiter who claimed this specific order.
+     *
+     * This can be different from the table's
+     * primary assigned waiter.
      */
     assignedWaiter: {
       type: mongoose.Schema.Types.ObjectId,
@@ -260,27 +296,11 @@ const OrderSchema = new Schema(
       index: true,
     },
 
-    /*
-     * Time when the waiter claimed the order.
-     */
     waiterClaimedAt: {
       type: Date,
       default: null,
     },
 
-    /*
-     * How the waiter received the order.
-     *
-     * PRIMARY:
-     * Primary table waiter claimed within 4 minutes.
-     *
-     * BACKUP:
-     * Another waiter claimed after the 4-minute timeout
-     * or because the primary waiter was unavailable.
-     *
-     * SHARED:
-     * Order came from an unassigned/shared table.
-     */
     waiterClaimType: {
       type: String,
       enum: ["PRIMARY", "BACKUP", "SHARED"],
@@ -297,10 +317,6 @@ const OrderSchema = new Schema(
       default: null,
     },
 
-    /*
-     * Four-minute waiter response timer starts
-     * from this time.
-     */
     readyAt: {
       type: Date,
       default: null,
@@ -332,8 +348,16 @@ const OrderSchema = new Schema(
 );
 
 /*
- * Helpful index for waiter dashboard queries.
+ * Helpful indexes for cashier, waiter and
+ * dining-session queries.
  */
+OrderSchema.index({
+  diningSession: 1,
+  paymentStatus: 1,
+  status: 1,
+  createdAt: 1,
+});
+
 OrderSchema.index({
   status: 1,
   assignedWaiter: 1,
@@ -341,11 +365,6 @@ OrderSchema.index({
   createdAt: -1,
 });
 
-/*
- * Next.js development server may keep an old
- * compiled Mongoose model. Recompile the model
- * so new fields are recognized.
- */
 if (models.Order) {
   delete models.Order;
 }
