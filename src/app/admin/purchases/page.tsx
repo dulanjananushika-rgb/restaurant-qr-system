@@ -5,6 +5,9 @@ import InventoryItem from "@/models/InventoryItem";
 import Purchase from "@/models/Purchase";
 
 import PurchaseManager from "@/components/admin/PurchaseManager";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
 
 async function getPurchasePageData() {
   await connectDB();
