@@ -1,240 +1,536 @@
+import mongoose from "mongoose";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+
 import { connectDB } from "@/lib/mongodb";
 import { createAuditLog } from "@/lib/audit";
 
 import ComboOffer from "@/models/ComboOffer";
 import MenuItem from "@/models/MenuItem";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 type ComboItemInput = {
+  menuItem?: string;
+  quantity?: number | string;
+};
+
+type ComboOfferRequestBody = {
+  name?: string;
+  description?: string;
+  image?: string;
+  items?: ComboItemInput[];
+  offerPrice?: number | string;
+  active?: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+};
+
+type CleanedComboItem = {
   menuItem: string;
   quantity: number;
 };
 
-function isValidDateRange(startDate?: string, endDate?: string) {
-  if (!startDate || !endDate) return true;
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  return end >= start;
+class RequestValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RequestValidationError";
+  }
 }
 
-export async function GET() {
-  try {
-    await connectDB();
+/* =========================
+   Helper functions
+========================= */
 
-    const comboOffers = await ComboOffer.find()
-      .sort({ createdAt: -1 })
-      .populate("items.menuItem")
-      .lean();
+function sanitizeText(
+  value: unknown,
+  maximumLength: number
+): string {
+  if (typeof value !== "string") {
+    return "";
+  }
 
-    return NextResponse.json({
-      success: true,
-      data: comboOffers,
-    });
-  } catch (error) {
-    console.error("Combo offers GET API error:", error);
+  return value.trim().slice(0, maximumLength);
+}
 
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load combo offers",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
+function parseOptionalDate(
+  value: unknown,
+  fieldName: string
+): Date | null {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const parsedDate = new Date(String(value));
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new RequestValidationError(
+      `${fieldName} is invalid.`
+    );
+  }
+
+  return parsedDate;
+}
+
+function validateDateRange(
+  startDate: Date | null,
+  endDate: Date | null
+) {
+  if (
+    startDate &&
+    endDate &&
+    endDate.getTime() < startDate.getTime()
+  ) {
+    throw new RequestValidationError(
+      "End date must be the same as or later than the start date."
     );
   }
 }
 
-export async function POST(request: Request) {
-  try {
-    await connectDB();
+function normalizeComboItems(
+  items: unknown
+): CleanedComboItem[] {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new RequestValidationError(
+      "Please add at least one menu item to the combo."
+    );
+  }
 
-    const body = await request.json();
+  const cleanedItems: CleanedComboItem[] = [];
+  const duplicateCheck = new Set<string>();
 
-    const {
-      name,
-      description = "",
-      image = "",
-      items,
-      offerPrice,
-      active = true,
-      startDate = "",
-      endDate = "",
-    } = body as {
-      name: string;
-      description?: string;
-      image?: string;
-      items: ComboItemInput[];
-      offerPrice: number;
-      active?: boolean;
-      startDate?: string;
-      endDate?: string;
-    };
+  for (const rawItem of items as ComboItemInput[]) {
+    const menuItemId =
+      typeof rawItem?.menuItem === "string"
+        ? rawItem.menuItem.trim()
+        : "";
 
-    if (!name || !name.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Combo name is required",
-        },
-        { status: 400 }
+    const quantity = Number(rawItem?.quantity);
+
+    if (
+      !menuItemId ||
+      !mongoose.Types.ObjectId.isValid(menuItemId)
+    ) {
+      throw new RequestValidationError(
+        "One or more menu item IDs are invalid."
       );
     }
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Please add at least one menu item to combo",
-        },
-        { status: 400 }
+    if (
+      !Number.isInteger(quantity) ||
+      quantity <= 0
+    ) {
+      throw new RequestValidationError(
+        "Every combo item must have a valid quantity greater than zero."
       );
     }
 
-    if (!offerPrice || Number(offerPrice) <= 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Valid offer price is required",
-        },
-        { status: 400 }
+    if (duplicateCheck.has(menuItemId)) {
+      throw new RequestValidationError(
+        "Duplicate menu items are not allowed in one combo."
       );
     }
 
-    if (!isValidDateRange(startDate, endDate)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "End date must be after start date",
-        },
-        { status: 400 }
-      );
-    }
+    duplicateCheck.add(menuItemId);
 
-    const cleanedItems = items
-      .filter((item) => item.menuItem && Number(item.quantity) > 0)
-      .map((item) => ({
-        menuItem: item.menuItem,
-        quantity: Number(item.quantity),
-      }));
+    cleanedItems.push({
+      menuItem: menuItemId,
+      quantity,
+    });
+  }
 
-    if (cleanedItems.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Please add valid menu items and quantities",
-        },
-        { status: 400 }
-      );
-    }
+  return cleanedItems;
+}
 
-    const duplicateCheck = new Set<string>();
+async function buildComboItems(
+  rawItems: unknown
+) {
+  const cleanedItems =
+    normalizeComboItems(rawItems);
 
-    for (const item of cleanedItems) {
-      if (duplicateCheck.has(item.menuItem)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Duplicate menu items are not allowed in one combo",
-          },
-          { status: 400 }
-        );
-      }
+  const menuItemIds = cleanedItems.map(
+    (item) => item.menuItem
+  );
 
-      duplicateCheck.add(item.menuItem);
-    }
+  /*
+   * Only currently available menu items can
+   * be included in a new combo offer.
+   */
+  const menuItems = (await MenuItem.find({
+    _id: {
+      $in: menuItemIds,
+    },
 
-    const menuItemIds = cleanedItems.map((item) => item.menuItem);
+    available: true,
+  })
+    .select("_id name price available")
+    .lean()) as any[];
 
-    const menuItems = await MenuItem.find({
-      _id: { $in: menuItemIds },
-      available: true,
-    }).lean();
+  if (menuItems.length !== menuItemIds.length) {
+    throw new RequestValidationError(
+      "Some selected menu items are invalid or unavailable."
+    );
+  }
 
-    if (menuItems.length !== menuItemIds.length) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Some menu items are invalid or unavailable",
-        },
-        { status: 400 }
-      );
-    }
+  const menuItemMap = new Map(
+    menuItems.map((menuItem: any) => [
+      menuItem._id.toString(),
+      menuItem,
+    ])
+  );
 
-    const comboItems = cleanedItems.map((item) => {
-      const menuItem = menuItems.find(
-        (menu) => menu._id.toString() === item.menuItem
+  const comboItems = cleanedItems.map(
+    (item) => {
+      const menuItem = menuItemMap.get(
+        item.menuItem
       );
 
       if (!menuItem) {
-        throw new Error("Invalid menu item in combo");
+        throw new RequestValidationError(
+          "A selected menu item could not be found."
+        );
+      }
+
+      const itemPrice = Number(
+        menuItem.price
+      );
+
+      if (
+        !Number.isFinite(itemPrice) ||
+        itemPrice < 0
+      ) {
+        throw new RequestValidationError(
+          `${menuItem.name || "A menu item"} has an invalid price.`
+        );
       }
 
       return {
         menuItem: menuItem._id,
         quantity: item.quantity,
-        priceSnapshot: Number(menuItem.price),
+        priceSnapshot: itemPrice,
       };
-    });
-
-    const originalPrice = comboItems.reduce(
-      (sum, item) => sum + item.priceSnapshot * item.quantity,
-      0
-    );
-
-    if (Number(offerPrice) > originalPrice) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Offer price cannot be greater than original price",
-        },
-        { status: 400 }
-      );
     }
+  );
 
-    const comboOffer = await ComboOffer.create({
-      name: name.trim(),
-      description,
-      image,
-      items: comboItems,
-      originalPrice,
-      offerPrice: Number(offerPrice),
-      active,
-      startDate: startDate ? new Date(startDate) : null,
-      endDate: endDate ? new Date(endDate) : null,
-    });
+  const originalPrice = Number(
+    comboItems
+      .reduce(
+        (total, item) =>
+          total +
+          item.priceSnapshot *
+            item.quantity,
+        0
+      )
+      .toFixed(2)
+  );
 
-    const populatedCombo = await ComboOffer.findById(comboOffer._id)
-      .populate("items.menuItem")
-      .lean();
+  return {
+    comboItems,
+    originalPrice,
+  };
+}
 
-    await createAuditLog({
-      action: "COMBO_CREATED",
-      module: "COMBO_OFFERS",
-      description: `Combo offer "${name.trim()}" created. Original price: Rs. ${originalPrice}, Offer price: Rs. ${Number(
-        offerPrice
-      )}.`,
-    });
+function revalidateComboPages() {
+  /*
+   * Admin combo list.
+   */
+  revalidatePath(
+    "/admin/combo-offers"
+  );
+
+  /*
+   * Admin dashboard may contain recent
+   * information or statistics.
+   */
+  revalidatePath(
+    "/admin/dashboard"
+  );
+
+  /*
+   * Public customer takeaway page.
+   */
+  revalidatePath("/takeaway");
+
+  /*
+   * Revalidate every table-specific
+   * customer ordering page.
+   */
+  revalidatePath(
+    "/table/[qrCode]",
+    "page"
+  );
+}
+
+function createErrorResponse(
+  error: unknown,
+  defaultMessage: string
+) {
+  if (
+    error instanceof RequestValidationError
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: error.message,
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+
+  if (error instanceof SyntaxError) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "The request body contains invalid JSON.",
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+
+  if (
+    error instanceof
+    mongoose.Error.ValidationError
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: error.message,
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+
+  return NextResponse.json(
+    {
+      success: false,
+      message: defaultMessage,
+
+      error:
+        process.env.NODE_ENV ===
+        "development"
+          ? error instanceof Error
+            ? error.message
+            : String(error)
+          : undefined,
+    },
+    {
+      status: 500,
+    }
+  );
+}
+
+/* =========================
+   GET all combo offers
+========================= */
+
+export async function GET() {
+  try {
+    await connectDB();
+
+    const comboOffers =
+      await ComboOffer.find()
+        .sort({
+          createdAt: -1,
+        })
+        .populate("items.menuItem")
+        .lean();
 
     return NextResponse.json(
       {
         success: true,
-        message: "Combo offer created successfully",
-        data: populatedCombo,
+        data: comboOffers,
       },
-      { status: 201 }
+      {
+        status: 200,
+
+        headers: {
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate",
+        },
+      }
     );
   } catch (error) {
-    console.error("Combo offers POST API error:", error);
+    console.error(
+      "Combo offers GET API error:",
+      error
+    );
+
+    return createErrorResponse(
+      error,
+      "Failed to load combo offers."
+    );
+  }
+}
+
+/* =========================
+   CREATE combo offer
+========================= */
+
+export async function POST(
+  request: Request
+) {
+  try {
+    await connectDB();
+
+    const body =
+      (await request.json()) as ComboOfferRequestBody;
+
+    const name = sanitizeText(
+      body.name,
+      150
+    );
+
+    const description = sanitizeText(
+      body.description,
+      1500
+    );
+
+    const image = sanitizeText(
+      body.image,
+      2000
+    );
+
+    if (!name) {
+      throw new RequestValidationError(
+        "Combo name is required."
+      );
+    }
+
+    const offerPrice = Number(
+      body.offerPrice
+    );
+
+    if (
+      !Number.isFinite(offerPrice) ||
+      offerPrice <= 0
+    ) {
+      throw new RequestValidationError(
+        "A valid offer price greater than zero is required."
+      );
+    }
+
+    const startDate =
+      parseOptionalDate(
+        body.startDate,
+        "Start date"
+      );
+
+    const endDate =
+      parseOptionalDate(
+        body.endDate,
+        "End date"
+      );
+
+    validateDateRange(
+      startDate,
+      endDate
+    );
+
+    const {
+      comboItems,
+      originalPrice,
+    } = await buildComboItems(
+      body.items
+    );
+
+    const roundedOfferPrice =
+      Number(offerPrice.toFixed(2));
+
+    if (
+      roundedOfferPrice >
+      originalPrice
+    ) {
+      throw new RequestValidationError(
+        "Offer price cannot be greater than the original price."
+      );
+    }
+
+    const active =
+      typeof body.active === "boolean"
+        ? body.active
+        : true;
+
+    const comboOffer =
+      await ComboOffer.create({
+        name,
+        description,
+        image,
+
+        items: comboItems,
+
+        originalPrice,
+        offerPrice:
+          roundedOfferPrice,
+
+        active,
+
+        startDate,
+        endDate,
+      });
+
+    const populatedCombo =
+      await ComboOffer.findById(
+        comboOffer._id
+      )
+        .populate("items.menuItem")
+        .lean();
+
+    await createAuditLog({
+      action: "COMBO_CREATED",
+      module: "COMBO_OFFERS",
+
+      description:
+        `Combo offer "${name}" created. ` +
+        `Original price: Rs. ${originalPrice}, ` +
+        `Offer price: Rs. ${roundedOfferPrice}.`,
+
+      metadata: {
+        comboOfferId:
+          comboOffer._id.toString(),
+
+        name,
+        originalPrice,
+        offerPrice:
+          roundedOfferPrice,
+        active,
+      },
+    });
+
+    revalidateComboPages();
 
     return NextResponse.json(
       {
-        success: false,
-        message: "Failed to create combo offer",
-        error: error instanceof Error ? error.message : String(error),
+        success: true,
+        message:
+          "Combo offer created successfully.",
+        data: populatedCombo,
       },
-      { status: 500 }
+      {
+        status: 201,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Combo offers POST API error:",
+      error
+    );
+
+    return createErrorResponse(
+      error,
+      "Failed to create combo offer."
     );
   }
 }

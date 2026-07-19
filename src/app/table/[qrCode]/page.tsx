@@ -7,6 +7,9 @@ import Category from "@/models/Category";
 import ComboOffer from "@/models/ComboOffer";
 
 import CustomerMenuClient from "@/components/customer/CustomerMenuClient";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
 
 type PageParams = {
   params: Promise<{

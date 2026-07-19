@@ -5,6 +5,9 @@ import MenuItem from "@/models/MenuItem";
 import "@/models/Category";
 
 import ComboOfferManager from "@/components/admin/ComboOfferManager";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
 
 async function getComboOfferData() {
   await connectDB();
