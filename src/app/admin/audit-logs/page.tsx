@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import {
   Activity,
   AlertTriangle,
@@ -24,10 +26,13 @@ type AuditLogData = {
   updatedAt: string;
 };
 
-async function getAuditLogs() {
+async function getAuditLogs(): Promise<AuditLogData[]> {
   await connectDB();
 
-  const logs = await AuditLog.find().sort({ createdAt: -1 }).limit(200).lean();
+  const logs = await AuditLog.find()
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .lean();
 
   return JSON.parse(JSON.stringify(logs)) as AuditLogData[];
 }
@@ -62,6 +67,7 @@ function getModuleIcon(module: string) {
   if (module === "CASHIER") return CreditCard;
   if (module === "CATEGORIES") return FolderOpen;
   if (module === "ORDERS") return FileClock;
+
   return ShieldCheck;
 }
 
@@ -76,76 +82,107 @@ export default async function AdminAuditLogsPage() {
 
   const todayLogs = logs.filter((log) => {
     const createdAt = new Date(log.createdAt);
+
     return createdAt.toDateString() === today.toDateString();
   });
 
-  const paymentLogs = logs.filter((log) => log.module === "CASHIER");
-  const kitchenLogs = logs.filter((log) => log.module === "KITCHEN");
-  const waiterLogs = logs.filter((log) => log.module === "WAITER");
+  const paymentLogs = logs.filter(
+    (log) => log.module === "CASHIER"
+  );
+
+  const kitchenLogs = logs.filter(
+    (log) => log.module === "KITCHEN"
+  );
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <section className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-6">
-        <p className="text-sm font-medium text-emerald-300">Audit Logs</p>
+        <p className="text-sm font-medium text-emerald-300">
+          Audit Logs
+        </p>
 
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">
           System activity history
         </h1>
 
         <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-          Track important actions such as order status changes, payment
-          settlements, category changes and staff activity.
+          Track important actions such as order status changes,
+          payment settlements, category changes and staff activity.
         </p>
       </section>
 
+      {/* Statistics */}
       <section className="grid gap-4 md:grid-cols-4">
+        {/* Total Logs */}
         <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
             <ShieldCheck size={21} />
           </div>
 
-          <p className="text-sm text-neutral-500">Total Logs</p>
-          <h3 className="mt-2 text-3xl font-semibold">{logs.length}</h3>
+          <p className="text-sm text-neutral-500">
+            Total Logs
+          </p>
+
+          <h3 className="mt-2 text-3xl font-semibold">
+            {logs.length}
+          </h3>
         </div>
 
+        {/* Today Logs */}
         <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-300">
             <Clock size={21} />
           </div>
 
-          <p className="text-sm text-neutral-500">Today Logs</p>
+          <p className="text-sm text-neutral-500">
+            Today Logs
+          </p>
+
           <h3 className="mt-2 text-3xl font-semibold text-sky-300">
             {todayLogs.length}
           </h3>
         </div>
 
+        {/* Kitchen Actions */}
         <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-300">
             <Utensils size={21} />
           </div>
 
-          <p className="text-sm text-neutral-500">Kitchen Actions</p>
+          <p className="text-sm text-neutral-500">
+            Kitchen Actions
+          </p>
+
           <h3 className="mt-2 text-3xl font-semibold text-orange-300">
             {kitchenLogs.length}
           </h3>
         </div>
 
+        {/* Payment Actions */}
         <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
           <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
             <CreditCard size={21} />
           </div>
 
-          <p className="text-sm text-neutral-500">Payment Actions</p>
+          <p className="text-sm text-neutral-500">
+            Payment Actions
+          </p>
+
           <h3 className="mt-2 text-3xl font-semibold text-emerald-300">
             {paymentLogs.length}
           </h3>
         </div>
       </section>
 
+      {/* Recent Activity */}
       <section className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
         <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div>
-            <h2 className="text-lg font-semibold">Recent Activity</h2>
+            <h2 className="text-lg font-semibold">
+              Recent Activity
+            </h2>
+
             <p className="mt-1 text-sm text-neutral-500">
               Showing latest 200 system actions.
             </p>
@@ -168,13 +205,17 @@ export default async function AdminAuditLogsPage() {
               >
                 <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                   <div className="flex min-w-0 items-start gap-3">
+                    {/* Icon */}
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/[0.04] text-emerald-300">
                       <Icon size={20} />
                     </div>
 
+                    {/* Content */}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold">{log.action}</p>
+                        <p className="text-sm font-semibold">
+                          {log.action}
+                        </p>
 
                         <span
                           className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${moduleClass(
@@ -190,8 +231,13 @@ export default async function AdminAuditLogsPage() {
                       </p>
 
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-neutral-500">
-                        <span>By: {log.performedBy || "System"}</span>
-                        <span>{formatDateTime(log.createdAt)}</span>
+                        <span>
+                          By: {log.performedBy || "System"}
+                        </span>
+
+                        <span>
+                          {formatDateTime(log.createdAt)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -200,12 +246,14 @@ export default async function AdminAuditLogsPage() {
             );
           })}
 
+          {/* Empty State */}
           {logs.length === 0 && (
             <div className="rounded-2xl border border-white/10 bg-black/20 p-10 text-center">
               <AlertTriangle
                 className="mx-auto mb-3 text-neutral-600"
                 size={38}
               />
+
               <p className="text-sm text-neutral-500">
                 No audit logs recorded yet.
               </p>
