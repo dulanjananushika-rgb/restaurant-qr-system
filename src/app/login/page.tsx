@@ -375,6 +375,55 @@ export default function LoginPage() {
                 </p>
               </form>
             </div>
+            <div className="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 py-4">
+  <p className="mb-3 text-sm font-semibold text-emerald-400">
+    Demo Login Credentials
+  </p>
+
+  <div className="space-y-2 text-xs leading-5 text-slate-400">
+
+    <p>
+      <span className="font-semibold text-white">
+        Admin:
+      </span>
+      <br />
+      admin@saffron.com
+      <br />
+      Password: 123456
+    </p>
+
+    <p>
+      <span className="font-semibold text-white">
+        Kitchen:
+      </span>
+      <br />
+      kitchen@saffron.com
+      <br />
+      Password: 123456
+    </p>
+
+    <p>
+      <span className="font-semibold text-white">
+        Waiter:
+      </span>
+      <br />
+      waiter@saffron.com
+      <br />
+      Password: 123456
+    </p>
+
+    <p>
+      <span className="font-semibold text-white">
+        Cashier:
+      </span>
+      <br />
+      cashier@saffron.com
+      <br />
+      Password: 123456
+    </p>
+
+  </div>
+</div>
 
             <div className="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-center text-xs leading-5 text-slate-500">
               Customers do not need an account. They can place
