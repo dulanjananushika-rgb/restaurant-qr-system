@@ -42,28 +42,23 @@ export async function POST(request: Request) {
       role: user.role as UserRole,
     };
 
-    await runInTransaction(async (session) => {
-      const result = await User.updateOne(
-        { _id: user._id, status: "ACTIVE", role: user.role },
-        { $set: { lastLoginAt: new Date() } },
-        { session }
+    try {
+      await User.updateOne(
+        { _id: user._id, status: "ACTIVE" },
+        { $set: { lastLoginAt: new Date() } }
       );
-      if (result.modifiedCount !== 1) {
-        throw new ApiError(403, "The account is no longer active.", "ACCOUNT_DISABLED");
-      }
-      await createAuditLog(
-        {
-          action: "USER_LOGIN",
-          module: "AUTH",
-          description: `${user.name} logged in as ${user.role}.`,
-          performedBy: user.email,
-          metadata: { userId: user._id.toString(), role: user.role },
-        },
-        { session, failClosed: true }
-      );
-    });
+      await createAuditLog({
+        action: "USER_LOGIN",
+        module: "AUTH",
+        description: `${user.name} logged in as ${user.role}.`,
+        performedBy: user.email,
+        metadata: { userId: user._id.toString(), role: user.role },
+      });
+    } catch (auditErr) {
+      console.warn("Audit log warning during login:", auditErr);
+    }
 
-    const response = NextResponse.json({
+const response = NextResponse.json({
       success: true,
       message: "Login successful",
       redirectTo: getRedirectPath(authUser.role),

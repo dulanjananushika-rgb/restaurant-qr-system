@@ -365,8 +365,4 @@ OrderSchema.index({
   createdAt: -1,
 });
 
-if (models.Order) {
-  delete models.Order;
-}
-
-export default mongoose.model("Order", OrderSchema);
+export default models.Order || mongoose.model("Order", OrderSchema);

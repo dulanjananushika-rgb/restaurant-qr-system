@@ -122,8 +122,4 @@ UserSchema.index({
  * Recompile the Mongoose model during
  * Next.js development after schema changes.
  */
-if (models.User) {
-  delete models.User;
-}
-
-export default mongoose.model("User", UserSchema);
+export default models.User || mongoose.model("User", UserSchema);

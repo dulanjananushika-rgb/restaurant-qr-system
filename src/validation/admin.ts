@@ -170,13 +170,13 @@ const staffFields = {
 
 export const createStaffSchema = z.object({
   ...staffFields,
-  password: z.string().min(8).max(128),
+  password: z.string().min(6).max(128),
   status: staffFields.status.optional().default("ACTIVE"),
 });
 
 export const updateStaffSchema = z.object({
   ...staffFields,
-  password: z.union([z.literal(""), z.string().min(8).max(128)]).optional(),
+  password: z.union([z.literal(""), z.string().min(6).max(128)]).optional(),
 });
 
 export const tableAssignmentSchema = z

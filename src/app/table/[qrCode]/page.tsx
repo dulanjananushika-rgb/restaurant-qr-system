@@ -7,6 +7,7 @@ import Category from "@/models/Category";
 import ComboOffer from "@/models/ComboOffer";
 
 import CustomerMenuClient from "@/components/customer/CustomerMenuClient";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
@@ -18,50 +19,57 @@ type PageParams = {
 };
 
 async function getTableMenu(qrCode: string) {
-  await connectDB();
+  try {
+    await connectDB();
 
-  const table = await Table.findOne({
-    qrCode: qrCode.toUpperCase(),
-  }).lean();
+    const table = await Table.findOne({
+      qrCode: qrCode.toUpperCase(),
+    }).lean();
 
-  if (!table) {
+    if (!table) {
+      return null;
+    }
+
+    const today = new Date();
+
+    const [categories, menuItems, comboOffers] = await Promise.all([
+      Category.find().sort({ name: 1 }).lean().catch(() => []),
+
+      MenuItem.find({
+        available: true,
+      })
+        .sort({ createdAt: -1 })
+        .populate("category")
+        .lean()
+        .catch(() => []),
+
+      ComboOffer.find({
+        active: true,
+        $and: [
+          {
+            $or: [{ startDate: null }, { startDate: { $lte: today } }],
+          },
+          {
+            $or: [{ endDate: null }, { endDate: { $gte: today } }],
+          },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .populate("items.menuItem")
+        .lean()
+        .catch(() => []),
+    ]);
+
+    return {
+      table: JSON.parse(JSON.stringify(table)),
+      categories: JSON.parse(JSON.stringify(categories || [])),
+      menuItems: JSON.parse(JSON.stringify(menuItems || [])),
+      comboOffers: JSON.parse(JSON.stringify(comboOffers || [])),
+    };
+  } catch (error) {
+    console.error("getTableMenu error:", error);
     return null;
   }
-
-  const today = new Date();
-
-  const [categories, menuItems, comboOffers] = await Promise.all([
-    Category.find().sort({ name: 1 }).lean(),
-
-    MenuItem.find({
-      available: true,
-    })
-      .sort({ createdAt: -1 })
-      .populate("category")
-      .lean(),
-
-    ComboOffer.find({
-      active: true,
-      $and: [
-        {
-          $or: [{ startDate: null }, { startDate: { $lte: today } }],
-        },
-        {
-          $or: [{ endDate: null }, { endDate: { $gte: today } }],
-        },
-      ],
-    })
-      .sort({ createdAt: -1 })
-      .populate("items.menuItem")
-      .lean(),
-  ]);
-
-  return {
-    table: JSON.parse(JSON.stringify(table)),
-    categories: JSON.parse(JSON.stringify(categories)),
-    menuItems: JSON.parse(JSON.stringify(menuItems)),
-    comboOffers: JSON.parse(JSON.stringify(comboOffers)),
-  };
 }
 
 export default async function CustomerTablePage({ params }: PageParams) {

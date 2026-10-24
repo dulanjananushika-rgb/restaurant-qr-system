@@ -40,12 +40,6 @@ const DiningSessionSchema = new Schema(
   }
 );
 
-/*
- * A table can have only one OPEN dining session.
- *
- * After the session is closed, the same table
- * can create a new session for new customers.
- */
 DiningSessionSchema.index(
   {
     table: 1,
@@ -53,22 +47,10 @@ DiningSessionSchema.index(
   },
   {
     unique: true,
-
     partialFilterExpression: {
       status: "OPEN",
     },
   }
 );
 
-/*
- * Recompile during Next.js development so newly
- * added schema fields are immediately recognized.
- */
-if (models.DiningSession) {
-  delete models.DiningSession;
-}
-
-export default mongoose.model(
-  "DiningSession",
-  DiningSessionSchema
-);
+export default models.DiningSession || mongoose.model("DiningSession", DiningSessionSchema);
