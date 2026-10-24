@@ -9,7 +9,6 @@ import {
   PackageCheck,
   RefreshCcw,
   Truck,
-  Utensils,
 } from "lucide-react";
 
 type MenuItem = {

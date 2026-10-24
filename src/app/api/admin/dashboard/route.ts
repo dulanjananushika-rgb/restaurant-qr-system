@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 
 import Order from "@/models/Order";
@@ -7,8 +8,10 @@ import InventoryItem from "@/models/InventoryItem";
 // Important: populate("table") wada karanna Table model eka register wenna one
 import "@/models/Table";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const today = new Date();

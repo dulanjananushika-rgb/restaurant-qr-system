@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import { revalidatePath } from "next/cache";
 
 import InventoryItem from "@/models/InventoryItem";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { inventoryItemSchema } from "@/validation/admin";
 
 type RouteParams = {
   params: Promise<{
@@ -12,32 +16,25 @@ type RouteParams = {
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
-    const body = await request.json();
-
-    const { name, unit, quantity, minQuantity } = body;
-
-    if (!name) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Item name is required",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, unit, quantity, minQuantity } = await parseJsonBody(
+      request,
+      inventoryItemSchema
+    );
 
     const updatedItem = await InventoryItem.findByIdAndUpdate(
       id,
       {
         name,
-        unit: unit || "kg",
-        quantity: Number(quantity) || 0,
-        minQuantity: Number(minQuantity) || 0,
+        unit,
+        quantity,
+        minQuantity,
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!updatedItem) {
@@ -58,22 +55,15 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       data: updatedItem,
     });
   } catch (error) {
-    console.error("Inventory PATCH API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update inventory item",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Inventory item update failed");
   }
 }
 
 // ==================== DELETE METHOD ====================
-export async function DELETE(_request: Request, { params }: RouteParams) {
+export async function DELETE(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
@@ -110,15 +100,6 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       message: "Inventory item deleted successfully",
     });
   } catch (error) {
-    console.error("Inventory DELETE API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to delete inventory item",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Inventory item deletion failed");
   }
 }

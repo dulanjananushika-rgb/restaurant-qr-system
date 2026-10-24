@@ -157,7 +157,10 @@ export default function WaiterWorkStatusControl() {
   }, []);
 
   useEffect(() => {
-    void loadWorkStatus();
+    const timer = window.setTimeout(() => {
+      void loadWorkStatus();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadWorkStatus]);
 
   async function updateWorkStatus(

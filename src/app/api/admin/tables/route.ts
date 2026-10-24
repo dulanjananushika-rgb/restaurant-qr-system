@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import Table from "@/models/Table";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { createTableSchema } from "@/validation/admin";
 
 function generateQrCode(name: string) {
   const cleanName = name.trim().replace(/\s+/g, "_").toUpperCase();
@@ -9,8 +13,10 @@ function generateQrCode(name: string) {
   return `${cleanName}_${random}`;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const tables = await Table.find().sort({ createdAt: -1 }).lean();
@@ -20,39 +26,21 @@ export async function GET() {
       data: tables,
     });
   } catch (error) {
-    console.error("Tables GET API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load tables",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Table list failed");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
-    const body = await request.json();
-    const { name, capacity } = body;
-
-    if (!name || !capacity) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Table name and capacity are required",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, capacity } = await parseJsonBody(request, createTableSchema);
 
     const table = await Table.create({
       name,
-      capacity: Number(capacity),
+      capacity,
       qrCode: generateQrCode(name),
       status: "AVAILABLE",
     });
@@ -66,15 +54,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Tables POST API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to create table",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Table creation failed");
   }
 }

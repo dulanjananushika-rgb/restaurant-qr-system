@@ -1,69 +1,22 @@
 import mongoose from "mongoose";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { verifyToken } from "@/lib/auth";
-import { connectDB } from "@/lib/mongodb";
+import { requireApiUser } from "@/lib/api/auth";
 
 import Table from "@/models/Table";
 import User from "@/models/User";
-
-type AssignmentBody = {
-  tableId?: string;
-  tableIds?: string[];
-  waiterId?: string | null;
-};
-
-async function getActiveAdmin() {
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("restaurant_token")?.value;
-
-    if (!token) {
-      return null;
-    }
-
-    const authUser = verifyToken(token);
-
-    if (authUser.role !== "ADMIN") {
-      return null;
-    }
-
-    await connectDB();
-
-    const admin = await User.findOne({
-      _id: authUser.id,
-      role: "ADMIN",
-      status: "ACTIVE",
-    })
-      .select("_id name email role status")
-      .lean();
-
-    return admin ? authUser : null;
-  } catch {
-    return null;
-  }
-}
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { tableAssignmentSchema } from "@/validation/admin";
 
 /*
  * GET
  * Load all tables and active waiters.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const adminUser = await getActiveAdmin();
-
-    if (!adminUser) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized. Active admin access is required.",
-        },
-        {
-          status: 401,
-        }
-      );
-    }
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
 
     const [tables, waiters] = await Promise.all([
       Table.find()
@@ -95,18 +48,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error("Table assignment GET error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load table assignments.",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      {
-        status: 500,
-      }
-    );
+    return apiErrorResponse(error, "Table assignment list failed");
   }
 }
 
@@ -129,23 +71,13 @@ export async function GET() {
  */
 export async function PATCH(request: Request) {
   try {
-    const adminUser = await getActiveAdmin();
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
 
-    if (!adminUser) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized. Active admin access is required.",
-        },
-        {
-          status: 401,
-        }
-      );
-    }
-
-    const body = (await request.json()) as AssignmentBody;
-
-    const { tableId, tableIds, waiterId } = body;
+    const { tableId, tableIds, waiterId } = await parseJsonBody(
+      request,
+      tableAssignmentSchema
+    );
 
     /*
      * Support both:
@@ -333,17 +265,6 @@ export async function PATCH(request: Request) {
       },
     });
   } catch (error) {
-    console.error("Table assignment PATCH error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update table assignments.",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      {
-        status: 500,
-      }
-    );
+    return apiErrorResponse(error, "Table assignment update failed");
   }
 }

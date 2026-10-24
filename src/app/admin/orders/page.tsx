@@ -1,3 +1,7 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 import { connectDB } from "@/lib/mongodb";
 
 import Order from "@/models/Order";
@@ -6,6 +10,7 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import AdminOrdersManager from "@/components/admin/AdminOrdersManager";
+import type { PopulatedRestaurantOrderDto } from "@/types/restaurant";
 
 async function getOrders() {
   await connectDB();
@@ -17,7 +22,7 @@ async function getOrders() {
     .populate("comboItems.comboOffer")
     .lean();
 
-  return JSON.parse(JSON.stringify(orders));
+  return JSON.parse(JSON.stringify(orders)) as PopulatedRestaurantOrderDto[];
 }
 
 export default async function AdminOrdersPage() {
@@ -26,15 +31,15 @@ export default async function AdminOrdersPage() {
   const totalOrders = orders.length;
 
   const pendingOrders = orders.filter(
-    (order: any) => order.status === "PENDING"
+    (order) => order.status === "PENDING"
   ).length;
 
   const preparingOrders = orders.filter(
-    (order: any) => order.status === "PREPARING"
+    (order) => order.status === "PREPARING"
   ).length;
 
   const unpaidOrders = orders.filter(
-    (order: any) => order.paymentStatus === "UNPAID"
+    (order) => order.paymentStatus === "UNPAID"
   ).length;
 
   return (

@@ -59,7 +59,7 @@ type StatusHistoryItem = {
 
 type Order = {
   _id: string;
-  table?: TableData;
+  table?: TableData | null;
   customerName?: string;
   customerPhone?: string;
   items: OrderItem[];

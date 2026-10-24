@@ -8,6 +8,7 @@
 [![React 19](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![Tests](https://img.shields.io/badge/Vitest-31%20Passed-22c55e?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
 
 <p align="center">
   A synchronized full-stack restaurant platform connecting <b>Customers</b>, <b>Waiters</b>, <b>Kitchen Staff</b>, <b>Cashiers</b>, and <b>Administrators</b> into one cohesive operational workflow.
@@ -44,51 +45,67 @@ The platform provides dedicated, role-tailored interfaces backed by secure serve
 * **Instant Table QR Access:** No app installation required; customers scan their table QR code to start an authenticated session tied directly to their table number.
 * **Smart Digital Menu:** Category filters, search, allergen tags, and real-time out-of-stock indicators.
 * **Live Order Tracking:** Transparent progress indicators (`Received` ➔ `Preparing` ➔ `Ready` ➔ `Served`).
+* **IDOR Protection:** Customer orders and receipts are safeguarded with per-order HttpOnly 32-byte cryptographic tokens.
 
 ### 2. 👨‍🍳 Kitchen Display System (KDS)
 * Real-time ticket board categorizing orders by urgency and preparation timeline.
 * One-click status updates alerting waiters the instant food is ready for pickup.
+* Automated recipe breakdowns for combo deals into individual line items.
 
 ### 3. 🛎️ Waiter Service Portal
 * Real-time floor overview displaying active tables, pending orders, and table assistance calls.
 * Order dispatch verification ensuring dishes reach the correct table without confusion.
+* Waiter work-status management (`ACTIVE` / `ON_BREAK`).
 
 ### 4. 💼 Cashier & Admin Management Back-Office
-* **Billing & Reconciliation:** Instant bill generation supporting cash, card, and digital payment methods.
-* **Menu Engineering:** Add/edit food items, manage pricing, upload food photography via Cloudinary, and toggle ingredient stock availability.
-* **Analytics:** Revenue summaries, peak dining hours, and best-selling menu analytics.
+* **Combined Table Billing (DiningSession):** Group multi-round table orders into a single consolidated bill and automatically free the table once settled.
+* **Billing & Reconciliation:** Instant bill generation supporting cash, card, and digital payment methods with thermal receipt printing.
+* **Menu Engineering & Combos:** Add/edit food items, manage scheduled combo offers, upload food photography via Cloudinary.
+* **Inventory & Recipe BOM:** Raw ingredient deduction, purchase orders, manual stock adjustments, and low-stock alerts.
+* **Analytics & Audit:** Native MongoDB aggregation pipelines for revenue summaries, best-selling menu analytics, and immutable audit logs.
 
 ---
 
-## 🛠️ Tech Stack & Implementation Details
+## 🏗️ Architecture & Project Structure
 
-- **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS v4, Lucide Icons
-- **Backend / APIs:** Next.js Server Actions & API Routes, Node.js runtime
-- **Database & ODM:** MongoDB Atlas, Mongoose ODM
-- **Authentication & Security:** JWT (JSON Web Tokens) with `jose` & `bcryptjs`, HTTP-only secure cookie sessions, Role-Based Access Control (RBAC) middleware
-- **Media & QR Generation:** Cloudinary API for high-resolution image hosting, `qrcode` dynamic table generation
-- **Hosting & Deployment:** Vercel (Edge-ready)
+The project follows Clean Architecture and Domain-Driven Design (DDD) principles:
 
----
-
-## 📂 Project Structure
+- `src/domain`: Pure status transitions (`status-machine.ts`), pricing totals, billing rules, and shared business types.
+- `src/application`: Transactional use cases for orders, stock, purchases, waiter delivery, combo offers, and payments.
+- `src/lib/api`: Double-barrier authentication, same-origin validation, rate limiting, and safe API errors.
+- `src/validation`: Strict Zod request contracts.
+- `src/app/api`: Thin HTTP controllers; privileged routes repeat authorization at the data boundary.
+- `src/models`: MongoDB persistence models, indexes, and schemas.
+- `tests`: Unit, validation, authorization, and concurrency transaction tests.
 
 ```bash
 src/
 ├── app/
 │   ├── (auth)/login/        # Role-based authentication entrypoint
-│   ├── admin/               # Back-office catalog & analytics dashboard
-│   ├── cashier/             # Billing, invoicing & settlement terminal
+│   ├── admin/               # Back-office catalog, inventory & analytics
+│   ├── cashier/             # Billing, combined session invoicing & settlement
 │   ├── kitchen/             # Real-time Kitchen Display System (KDS)
 │   ├── waiter/              # Floor tables & service dispatch portal
-│   ├── table/[id]/          # Customer QR dine-in ordering session
+│   ├── table/[qrCode]/      # Customer QR dine-in ordering session
 │   ├── takeaway/            # Carry-out and takeaway ordering flow
 │   └── api/                 # Secure RESTful API endpoints
+├── application/             # Business use-cases & transactional services
 ├── components/              # Modular UI components (modals, forms, badges)
-├── lib/                     # Database connection, JWT utilities, Cloudinary
-├── models/                  # Mongoose Schemas (User, Order, MenuItem, Table)
-└── types/                   # TypeScript interfaces and shared type contracts
+├── domain/                  # Pure domain entities, calculations & state machine
+├── lib/                     # DB connection, JWT auth, rate-limit, audit logging
+├── models/                  # Mongoose Schemas (User, Order, MenuItem, Table, etc.)
+├── types/                   # Shared TypeScript type contracts
+└── validation/              # Zod input validation schemas
 ```
+
+---
+
+## 🔒 Security & Data Integrity
+
+- **ACID Transactions:** Money, stock deductions, order status, table/session state, payment records, and audit records are changed inside MongoDB transactions (`readConcern: snapshot`, `writeConcern: majority`).
+- **Optimistic Stock Locking:** Concurrency-safe stock deduction avoids overselling items.
+- **Double-Barrier Auth:** Next.js 16 `proxy.ts` performs early route checks, while each protected API route verifies the active database user again.
+- **Per-Order Security:** Customer order, receipt, and payment views require the per-order HttpOnly access token; an order ID alone is not sufficient.
 
 ---
 
@@ -96,8 +113,8 @@ src/
 
 ### Prerequisites
 * Node.js 20.x or higher
-* MongoDB instance (local or MongoDB Atlas connection URI)
-* Cloudinary account for asset uploads
+* MongoDB replica set (local replica set or MongoDB Atlas) for transactions
+* Cloudinary credentials (optional, for image upload)
 
 ### 1. Clone the repository
 ```bash
@@ -112,20 +129,25 @@ npm install
 
 ### 3. Configure environment variables
 Create a `.env.local` file in the root directory:
-```env
-MONGODB_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret_key
-NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
+```bash
+cp .env.example .env.local
+```
+Set a random `JWT_SECRET` with at least 32 characters.
+
+### 4. Quality checks
+```bash
+npm run typecheck    # TypeScript validation
+npm run lint         # ESLint validation
+npm test             # Run 31 Vitest unit & integration tests
+npm run build        # Verify production Next.js build
 ```
 
-### 4. Run the development server
+### 5. Run the development server
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to experience the application.
+Open [http://localhost:3000](http://localhost:3000) with your browser.
 
 ---
 

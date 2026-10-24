@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -235,10 +236,11 @@ export default function CustomerMenu({
   const notification = getOrderNotification(activeOrder);
   const NotificationIcon = notification.icon;
 
-  async function loadActiveOrder(orderId: string) {
+  const loadActiveOrder = useCallback(async (orderId: string, token: string) => {
     try {
       const response = await fetch(`/api/public/orders/${orderId}`, {
         cache: "no-store",
+        headers: { "x-order-token": token },
       });
 
       const result = await response.json();
@@ -257,38 +259,40 @@ export default function CustomerMenu({
     } catch {
       // Customer page should not crash if status refresh fails.
     }
-  }
+  }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem(getOrderStorageKey(table._id));
+    const timer = window.setTimeout(() => {
+      const saved = localStorage.getItem(getOrderStorageKey(table._id));
+      if (!saved) return;
 
-    if (!saved) return;
+      try {
+        const parsed = JSON.parse(saved) as {
+          orderId?: string;
+          editToken?: string;
+        };
 
-    try {
-      const parsed = JSON.parse(saved) as {
-        orderId?: string;
-        editToken?: string;
-      };
-
-      if (parsed.orderId) {
-        setActiveOrderId(parsed.orderId);
-        setEditToken(parsed.editToken || "");
-        loadActiveOrder(parsed.orderId);
+        if (parsed.orderId) {
+          setActiveOrderId(parsed.orderId);
+          setEditToken(parsed.editToken || "");
+          void loadActiveOrder(parsed.orderId, parsed.editToken || "");
+        }
+      } catch {
+        localStorage.removeItem(getOrderStorageKey(table._id));
       }
-    } catch {
-      localStorage.removeItem(getOrderStorageKey(table._id));
-    }
-  }, [table._id]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadActiveOrder, table._id]);
 
   useEffect(() => {
     if (!activeOrderId) return;
 
     const interval = setInterval(() => {
-      loadActiveOrder(activeOrderId);
+      void loadActiveOrder(activeOrderId, editToken);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [activeOrderId]);
+  }, [activeOrderId, editToken, loadActiveOrder]);
 
   function addToCart(menuItem: MenuItem) {
     setError("");
@@ -473,7 +477,7 @@ export default function CustomerMenu({
       setActiveOrderId(orderId);
       setEditToken(returnedEditToken);
 
-      await loadActiveOrder(orderId);
+      await loadActiveOrder(orderId, returnedEditToken);
 
       if (paymentType === "PAY_NOW") {
         router.push(`/payment/${orderId}`);
@@ -639,9 +643,12 @@ export default function CustomerMenu({
               >
                 <div className="h-48 w-full bg-neutral-100">
                   {item.image ? (
-                    <img
+                    <Image
                       src={item.image}
                       alt={item.name}
+                      width={720}
+                      height={384}
+                      unoptimized
                       className="h-full w-full object-cover"
                     />
                   ) : (

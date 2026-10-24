@@ -1,26 +1,33 @@
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET;
+import type { AuthUser } from "@/domain/auth/types";
 
-if (!JWT_SECRET) {
-  throw new Error("Please add JWT_SECRET to .env.local");
+export type { AuthUser, UserRole } from "@/domain/auth/types";
+
+const TOKEN_ISSUER = "restaurant-qr-system";
+const TOKEN_AUDIENCE = "restaurant-staff";
+
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must contain at least 32 characters.");
+  }
+  return secret;
 }
 
-export type UserRole = "ADMIN" | "KITCHEN_STAFF" | "WAITER" | "CASHIER";
-
-export type AuthUser = {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-};
-
 export function createToken(user: AuthUser) {
-  return jwt.sign(user, JWT_SECRET as string, {
+  return jwt.sign(user, getJwtSecret(), {
+    algorithm: "HS256",
+    issuer: TOKEN_ISSUER,
+    audience: TOKEN_AUDIENCE,
     expiresIn: "7d",
   });
 }
 
 export function verifyToken(token: string) {
-  return jwt.verify(token, JWT_SECRET as string) as AuthUser;
+  return jwt.verify(token, getJwtSecret(), {
+    algorithms: ["HS256"],
+    issuer: TOKEN_ISSUER,
+    audience: TOKEN_AUDIENCE,
+  }) as AuthUser;
 }

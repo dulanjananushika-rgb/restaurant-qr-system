@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import { revalidatePath } from "next/cache";
 import Category from "@/models/Category";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { categorySchema } from "@/validation/admin";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const categories = await Category.find().sort({ createdAt: -1 }).lean();
@@ -14,35 +20,17 @@ export async function GET() {
       data: categories,
     });
   } catch (error) {
-    console.error("Categories GET API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load categories",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Category list failed");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
-    const body = await request.json();
-    const { name, description } = body;
-
-    if (!name) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Category name is required",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, description } = await parseJsonBody(request, categorySchema);
 
     const category = await Category.create({
       name,
@@ -62,15 +50,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Categories POST API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to create category",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Category creation failed");
   }
 }

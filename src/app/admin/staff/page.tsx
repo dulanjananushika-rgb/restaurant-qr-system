@@ -1,3 +1,7 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 import { connectDB } from "@/lib/mongodb";
 
 import User from "@/models/User";

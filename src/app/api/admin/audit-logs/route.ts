@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import AuditLog from "@/models/AuditLog";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const logs = await AuditLog.find()

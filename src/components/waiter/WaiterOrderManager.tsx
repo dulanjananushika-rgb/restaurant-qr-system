@@ -81,6 +81,8 @@ type Order = {
   statusHistory?: StatusHistoryItem[];
 };
 
+export type WaiterOrder = Order;
+
 function statusClass(status: string) {
   if (status === "READY") return "border-amber-500/20 bg-amber-500/10 text-amber-300";
   if (status === "PICKED_UP") return "border-sky-500/20 bg-sky-500/10 text-sky-300";
@@ -246,7 +248,11 @@ export default function WaiterOrderManager({ orders }: { orders: Order[] }) {
         {["ALL", "READY", "PICKED_UP", "DELIVERED"].map((status) => (
           <button
             key={status}
-            onClick={() => setFilter(status as any)}
+            onClick={() =>
+              setFilter(
+                status as "ALL" | "READY" | "PICKED_UP" | "DELIVERED"
+              )
+            }
             className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
               filter === status
                 ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-300"

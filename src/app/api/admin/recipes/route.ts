@@ -1,18 +1,20 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import { revalidatePath } from "next/cache"; // ← Import කළා
 
 import RecipeItem from "@/models/RecipeItem";
 import MenuItem from "@/models/MenuItem";
 import InventoryItem from "@/models/InventoryItem";
+import { apiErrorResponse, ApiError } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { runInTransaction } from "@/lib/db/transaction";
+import { recipeSchema } from "@/validation/admin";
 
-type IngredientInput = {
-  inventoryItem: string;
-  requiredQuantity: number;
-};
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const recipes = await RecipeItem.find()
@@ -33,124 +35,42 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error("Recipes GET API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load recipe mappings",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Recipe list failed");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
-    const body = await request.json();
+    const { menuItem, ingredients } = await parseJsonBody(request, recipeSchema);
 
-    const { menuItem, ingredients } = body as {
-      menuItem: string;
-      ingredients: IngredientInput[];
-    };
-
-    if (!menuItem) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Menu item is required",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!ingredients || ingredients.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Please add at least one ingredient",
-        },
-        { status: 400 }
-      );
-    }
-
-    const menuItemExists = await MenuItem.findById(menuItem);
-
-    if (!menuItemExists) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Selected menu item not found",
-        },
-        { status: 404 }
-      );
-    }
-
-    const cleanedIngredients = ingredients
-      .filter(
-        (item) =>
-          item.inventoryItem &&
-          Number(item.requiredQuantity) > 0
-      )
-      .map((item) => ({
-        inventoryItem: item.inventoryItem,
-        requiredQuantity: Number(item.requiredQuantity),
-      }));
-
-    if (cleanedIngredients.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Please add valid ingredients and quantities",
-        },
-        { status: 400 }
-      );
-    }
-
-    const duplicateCheck = new Set<string>();
-
-    for (const item of cleanedIngredients) {
-      if (duplicateCheck.has(item.inventoryItem)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Duplicate ingredients are not allowed in one recipe",
-          },
-          { status: 400 }
+    const savedRecipes = await runInTransaction(async (session) => {
+      const [menuItemExists, inventoryCount] = await Promise.all([
+        MenuItem.exists({ _id: menuItem }).session(session),
+        InventoryItem.countDocuments({
+          _id: { $in: ingredients.map((item) => item.inventoryItem) },
+        }).session(session),
+      ]);
+      if (!menuItemExists) {
+        throw new ApiError(404, "Selected menu item not found.", "MENU_ITEM_NOT_FOUND");
+      }
+      if (inventoryCount !== ingredients.length) {
+        throw new ApiError(
+          400,
+          "Some inventory ingredients are invalid.",
+          "INVALID_INGREDIENTS"
         );
       }
 
-      duplicateCheck.add(item.inventoryItem);
-    }
-
-    const inventoryIds = cleanedIngredients.map((item) => item.inventoryItem);
-
-    const inventoryCount = await InventoryItem.countDocuments({
-      _id: { $in: inventoryIds },
-    });
-
-    if (inventoryCount !== inventoryIds.length) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Some inventory ingredients are invalid",
-        },
-        { status: 400 }
+      await RecipeItem.deleteMany({ menuItem }, { session });
+      return RecipeItem.insertMany(
+        ingredients.map((ingredient) => ({ menuItem, ...ingredient })),
+        { session }
       );
-    }
-
-    await RecipeItem.deleteMany({ menuItem });
-
-    const recipeDocs = cleanedIngredients.map((item) => ({
-      menuItem,
-      inventoryItem: item.inventoryItem,
-      requiredQuantity: item.requiredQuantity,
-    }));
-
-    const savedRecipes = await RecipeItem.insertMany(recipeDocs);
+    });
 
     // ==================== IMPORTANT FIX ====================
     revalidatePath("/admin/recipes");
@@ -165,15 +85,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Recipes POST API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to save recipe",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Recipe save failed");
   }
 }

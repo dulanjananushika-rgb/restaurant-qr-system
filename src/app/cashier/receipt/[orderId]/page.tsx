@@ -1,3 +1,7 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 import Link from "next/link";
 import { ArrowLeft, ReceiptText } from "lucide-react";
 
@@ -10,6 +14,10 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import PrintReceiptButton from "@/components/cashier/PrintReceiptButton";
+import type {
+  PaymentDto,
+  PopulatedRestaurantOrderDto,
+} from "@/types/restaurant";
 
 type RouteParams = {
   params: Promise<{
@@ -33,8 +41,8 @@ async function getReceiptData(orderId: string) {
     .lean();
 
   return {
-    order: JSON.parse(JSON.stringify(order)),
-    payment: JSON.parse(JSON.stringify(payment)),
+    order: JSON.parse(JSON.stringify(order)) as PopulatedRestaurantOrderDto | null,
+    payment: JSON.parse(JSON.stringify(payment)) as PaymentDto | null,
   };
 }
 
@@ -74,14 +82,14 @@ export default async function CashierReceiptPage({ params }: RouteParams) {
 
   const normalItemsTotal =
     order.items?.reduce(
-      (sum: number, item: any) =>
+      (sum, item) =>
         sum + Number(item.price || 0) * Number(item.quantity || 0),
       0
     ) || 0;
 
   const comboItemsTotal =
     order.comboItems?.reduce(
-      (sum: number, combo: any) =>
+      (sum, combo) =>
         sum + Number(combo.price || 0) * Number(combo.quantity || 0),
       0
     ) || 0;
@@ -183,7 +191,7 @@ export default async function CashierReceiptPage({ params }: RouteParams) {
                 </thead>
 
                 <tbody className="divide-y divide-neutral-200">
-                  {order.items?.map((item: any) => (
+                  {order.items?.map((item) => (
                     <tr key={item._id}>
                       <td className="px-4 py-3 font-medium">
                         {item.menuItem?.name || "Menu item"}
@@ -203,7 +211,7 @@ export default async function CashierReceiptPage({ params }: RouteParams) {
                     </tr>
                   ))}
 
-                  {order.comboItems?.map((combo: any) => (
+                  {order.comboItems?.map((combo) => (
                     <tr key={combo._id}>
                       <td className="px-4 py-3">
                         <p className="font-medium">
@@ -212,7 +220,7 @@ export default async function CashierReceiptPage({ params }: RouteParams) {
 
                         <div className="mt-1 space-y-0.5 text-xs text-neutral-500">
                           {combo.comboItemsSnapshot?.map(
-                            (snapshot: any, index: number) => (
+                            (snapshot, index) => (
                               <p key={`${combo._id}-${index}`}>
                                 • {snapshot.name} × {snapshot.quantity}
                               </p>

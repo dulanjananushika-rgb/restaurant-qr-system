@@ -1,3 +1,7 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 import {
   Activity,
   AlertTriangle,
@@ -81,7 +85,6 @@ export default async function AdminAuditLogsPage() {
 
   const paymentLogs = logs.filter((log) => log.module === "CASHIER");
   const kitchenLogs = logs.filter((log) => log.module === "KITCHEN");
-  const waiterLogs = logs.filter((log) => log.module === "WAITER");
 
   return (
     <div className="space-y-6">

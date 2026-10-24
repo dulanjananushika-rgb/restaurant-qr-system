@@ -3,7 +3,8 @@ import { Armchair, QrCode, Users } from "lucide-react";
 import AddTableForm from "@/components/admin/AddTableForm";
 import TableQRCode from "@/components/admin/TableQRCode";
 import TableActions from "@/components/admin/TableActions";
-import { getAppUrl } from "@/lib/appUrl";
+import { connectDB } from "@/lib/mongodb";
+import Table from "@/models/Table";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,17 +19,8 @@ type RestaurantTable = {
 };
 
 async function getTables() {
-  const appUrl = getAppUrl();
-
-  const res = await fetch(`${appUrl}/api/admin/tables`, {
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch tables");
-  }
-
-  return res.json();
+  await connectDB();
+  return Table.find().sort({ createdAt: -1 }).lean();
 }
 
 const statusStyles = {
@@ -39,8 +31,8 @@ const statusStyles = {
 };
 
 export default async function AdminTablesPage() {
-  const result = await getTables();
-  const tables: RestaurantTable[] = result?.data || [];
+  const tableDocuments = await getTables();
+  const tables: RestaurantTable[] = JSON.parse(JSON.stringify(tableDocuments));
 
   const availableCount = tables.filter(
     (table) => table.status === "AVAILABLE"

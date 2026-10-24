@@ -1,140 +1,55 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import { createAuditLog } from "@/lib/audit";
 
+import { transitionOrder } from "@/application/orders/transition-order";
+import { ORDER_STATUSES } from "@/domain/order/types";
+import { ApiError, apiErrorResponse } from "@/lib/api/errors";
+import { requireApiUser } from "@/lib/api/auth";
+import { parseJsonBody } from "@/lib/api/validation";
 import Order from "@/models/Order";
+import { adminOrderUpdateSchema } from "@/validation/order";
+
 import "@/models/Table";
 
-type RouteParams = {
-  params: Promise<{
-    id: string;
-  }>;
-};
+type RouteContext = { params: Promise<{ id: string }> };
 
-const allowedStatuses = [
-  "PENDING",
-  "ACCEPTED",
-  "PREPARING",
-  "READY",
-  "PICKED_UP",
-  "DELIVERED",
-  "CANCELLED",
-];
-
-const allowedPaymentStatuses = [
-  "UNPAID",
-  "PENDING",
-  "PAID",
-  "FAILED",
-  "PARTIALLY_PAID",
-];
-
-export async function PATCH(request: Request, { params }: RouteParams) {
+export async function PATCH(request: Request, { params }: RouteContext) {
   try {
-    await connectDB();
-
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     const { id } = await params;
-    const body = await request.json();
+    const input = await parseJsonBody(request, adminOrderUpdateSchema);
 
-    const { status, paymentStatus } = body as {
-      status?: string;
-      paymentStatus?: string;
-    };
-
-    const updateData: {
-      status?: string;
-      paymentStatus?: string;
-    } = {};
-
-    if (status) {
-      if (!allowedStatuses.includes(status)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Invalid order status",
-          },
-          { status: 400 }
-        );
-      }
-
-      updateData.status = status;
+    if (input.status) {
+      const order = await transitionOrder(
+        id,
+        input.status,
+        "Order status updated by an administrator.",
+        auth.user,
+        { channel: "ADMIN", allowedStatuses: ORDER_STATUSES }
+      );
+      return NextResponse.json({
+        success: true,
+        message: "Order status updated successfully",
+        data: order,
+      });
     }
 
-    if (paymentStatus) {
-      if (!allowedPaymentStatuses.includes(paymentStatus)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Invalid payment status",
-          },
-          { status: 400 }
-        );
-      }
-
-      updateData.paymentStatus = paymentStatus;
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "No valid update data provided",
-        },
-        { status: 400 }
+    const order = await Order.findById(id).populate("table").lean();
+    if (!order) throw new ApiError(404, "Order not found.", "ORDER_NOT_FOUND");
+    if (input.paymentStatus !== order.paymentStatus) {
+      throw new ApiError(
+        409,
+        "Payment status is controlled by the cashier/payment workflow so that a matching payment record is always created.",
+        "PAYMENT_WORKFLOW_REQUIRED"
       );
     }
-
-    const order = await Order.findByIdAndUpdate(id, updateData, {
-      new: true,
-    })
-      .populate("table")
-      .lean();
-
-    if (!order) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Order not found",
-        },
-        { status: 404 }
-      );
-    }
-
-    const tableName =
-      typeof order.table === "object" && order.table && "name" in order.table
-        ? String(order.table.name)
-        : "Unknown table";
-
-    const updatedParts = [
-      status ? `Status changed to ${status}` : "",
-      paymentStatus ? `Payment status changed to ${paymentStatus}` : "",
-    ]
-      .filter(Boolean)
-      .join(", ");
-
-    await createAuditLog({
-      action: "ORDER_UPDATED",
-      module: "ADMIN_ORDERS",
-      description: `Order #${id
-        .slice(-6)
-        .toUpperCase()} updated for ${tableName}. ${updatedParts}.`,
-    });
 
     return NextResponse.json({
       success: true,
-      message: "Order updated successfully",
+      message: "Payment status is already up to date",
       data: order,
     });
   } catch (error) {
-    console.error("Admin order update error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update order",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Admin order update failed");
   }
 }

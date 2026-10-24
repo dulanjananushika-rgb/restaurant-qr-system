@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Copy, QrCode } from "lucide-react";
@@ -63,9 +65,12 @@ export default function TableQRCode({
 
       <div className="flex justify-center rounded-2xl bg-white p-3">
         {qrImage ? (
-          <img
+          <Image
             src={qrImage}
             alt={`${tableName} QR Code`}
+            width={160}
+            height={160}
+            unoptimized
             className="h-40 w-40"
           />
         ) : (

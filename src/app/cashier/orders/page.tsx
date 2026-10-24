@@ -19,6 +19,11 @@ import "@/models/ComboOffer";
 import "@/models/DiningSession";
 
 import CashierPaymentManager from "@/components/cashier/CashierPaymentManager";
+import type {
+  CashierOrder,
+  CashierPayment,
+  CashierSessionBill,
+} from "@/components/cashier/CashierPaymentManager";
 import LogoutButton from "@/components/auth/LogoutButton";
 
 export const dynamic = "force-dynamic";
@@ -27,21 +32,6 @@ export const runtime = "nodejs";
 /* =========================
    Types
 ========================= */
-
-type SessionBill = {
-  diningSessionId: string;
-
-  table?: {
-    _id: string;
-    name: string;
-  } | null;
-
-  orders: any[];
-
-  totalAmount: number;
-  allDelivered: boolean;
-  createdAt: string;
-};
 
 /* =========================
    Helper functions
@@ -85,17 +75,17 @@ function isToday(
  * 1. Combined dining-session bills
  * 2. Individual takeaway / legacy bills
  */
-function buildBills(unpaidOrders: any[]) {
+function buildBills(unpaidOrders: CashierOrder[]) {
   const sessionMap =
-    new Map<string, SessionBill>();
+    new Map<string, CashierSessionBill>();
 
-  const singleOrders: any[] = [];
+  const singleOrders: CashierOrder[] = [];
 
   for (const order of unpaidOrders) {
     const diningSessionId =
-      order.diningSession?._id ||
-      order.diningSession ||
-      null;
+      typeof order.diningSession === "string"
+        ? order.diningSession
+        : order.diningSession?._id ?? null;
 
     const belongsToDiningSession =
       order.orderType === "DINE_IN" &&
@@ -279,11 +269,11 @@ async function getCashierPaymentData() {
    */
   const unpaidOrders = JSON.parse(
     JSON.stringify(unpaidOrderDocuments)
-  );
+  ) as CashierOrder[];
 
   const payments = JSON.parse(
     JSON.stringify(paymentDocuments)
-  );
+  ) as CashierPayment[];
 
   const {
     sessionBills,
@@ -318,7 +308,7 @@ export default async function CashierOrdersPage() {
     unpaidOrders.reduce(
       (
         total: number,
-        order: any
+        order
       ) =>
         total +
         Number(order.totalAmount || 0),
@@ -327,7 +317,7 @@ export default async function CashierOrdersPage() {
 
   const todayPayments =
     payments.filter(
-      (payment: any) =>
+      (payment) =>
         isToday(
           payment.paidAt ||
             payment.createdAt
@@ -338,7 +328,7 @@ export default async function CashierOrdersPage() {
     todayPayments.reduce(
       (
         total: number,
-        payment: any
+        payment
       ) =>
         total +
         Number(payment.amount || 0),
@@ -347,20 +337,20 @@ export default async function CashierOrdersPage() {
 
   const cashPaymentsToday =
     todayPayments.filter(
-      (payment: any) =>
+      (payment) =>
         payment.method === "CASH"
     ).length;
 
   const cardOrOnlinePaymentsToday =
     todayPayments.filter(
-      (payment: any) =>
+      (payment) =>
         payment.method === "CARD" ||
         payment.method === "ONLINE"
     ).length;
 
   const takeawayOrders =
     singleOrders.filter(
-      (order: any) =>
+      (order) =>
         order.orderType ===
         "TAKE_AWAY"
     );

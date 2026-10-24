@@ -5,6 +5,11 @@ import InventoryItem from "@/models/InventoryItem";
 import Purchase from "@/models/Purchase";
 
 import PurchaseManager from "@/components/admin/PurchaseManager";
+import type {
+  InventoryItemDto,
+  PopulatedPurchaseDto,
+  SupplierDto,
+} from "@/types/restaurant";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
@@ -25,9 +30,9 @@ async function getPurchasePageData() {
   ]);
 
   return {
-    suppliers: JSON.parse(JSON.stringify(suppliers)),
-    inventoryItems: JSON.parse(JSON.stringify(inventoryItems)),
-    purchases: JSON.parse(JSON.stringify(purchases)),
+    suppliers: JSON.parse(JSON.stringify(suppliers)) as SupplierDto[],
+    inventoryItems: JSON.parse(JSON.stringify(inventoryItems)) as InventoryItemDto[],
+    purchases: JSON.parse(JSON.stringify(purchases)) as PopulatedPurchaseDto[],
   };
 }
 
@@ -35,16 +40,16 @@ export default async function AdminPurchasesPage() {
   const { suppliers, inventoryItems, purchases } = await getPurchasePageData();
 
   const totalPurchaseAmount = purchases.reduce(
-    (sum: number, purchase: any) => sum + Number(purchase.totalAmount || 0),
+    (sum, purchase) => sum + Number(purchase.totalAmount || 0),
     0
   );
 
   const paidPurchases = purchases.filter(
-    (purchase: any) => purchase.paymentStatus === "PAID"
+    (purchase) => purchase.paymentStatus === "PAID"
   ).length;
 
   const unpaidPurchases = purchases.filter(
-    (purchase: any) => purchase.paymentStatus === "UNPAID"
+    (purchase) => purchase.paymentStatus === "UNPAID"
   ).length;
 
   return (

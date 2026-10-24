@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import bcrypt from "bcryptjs";
 import { connectDB } from "@/lib/mongodb";
 import { revalidatePath } from "next/cache"; // ← Import කළා
 import User from "@/models/User";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { createStaffSchema } from "@/validation/admin";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const staff = await User.find()
@@ -18,48 +24,23 @@ export async function GET() {
       data: staff,
     });
   } catch (error) {
-    console.error("Staff GET API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load staff members",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Staff list failed");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
-    const body = await request.json();
-    const { name, email, password, role, status } = body;
-
-    if (!name || !email || !password || !role) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Name, email, password and role are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 6) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Password must be at least 6 characters",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, email, password, role, status } = await parseJsonBody(
+      request,
+      createStaffSchema
+    );
 
     const existingUser = await User.findOne({
-      email: email.toLowerCase().trim(),
+      email,
     });
 
     if (existingUser) {
@@ -72,14 +53,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const user = await User.create({
       name,
-      email: email.toLowerCase().trim(),
+      email,
       password: hashedPassword,
       role,
-      status: status || "ACTIVE",
+      status,
     });
 
     // ==================== IMPORTANT FIX ====================
@@ -102,15 +83,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Staff POST API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to create staff member",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Staff creation failed");
   }
 }

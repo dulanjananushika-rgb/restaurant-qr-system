@@ -1,5 +1,5 @@
 import Link from "next/link";
-import mongoose from "mongoose";
+import { cookies } from "next/headers";
 
 import {
   ArrowLeft,
@@ -12,15 +12,14 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { connectDB } from "@/lib/mongodb";
-
-import Order from "@/models/Order";
+import { getCustomerOrder } from "@/application/orders/update-order";
 
 import "@/models/Table";
 import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import MockPaymentButton from "@/components/public/MockPaymentButton";
+import type { PopulatedRestaurantOrderDto } from "@/types/restaurant";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -47,7 +46,7 @@ function getShortOrderId(orderId: string) {
     .toUpperCase();
 }
 
-function getCustomerMenuUrl(order: any) {
+function getCustomerMenuUrl(order: PopulatedRestaurantOrderDto) {
   if (
     order.orderType === "TAKE_AWAY"
   ) {
@@ -63,32 +62,23 @@ function getCustomerMenuUrl(order: any) {
   return "/";
 }
 
-async function getOrder(orderId: string) {
-  await connectDB();
-
-  if (
-    !mongoose.Types.ObjectId.isValid(orderId)
-  ) {
+async function getOrder(orderId: string, token: string) {
+  try {
+    return JSON.parse(
+      JSON.stringify(await getCustomerOrder(orderId, token))
+    ) as PopulatedRestaurantOrderDto;
+  } catch {
     return null;
   }
-
-  const order = await Order.findById(orderId)
-    .populate("table")
-    .populate("items.menuItem")
-    .populate("comboItems.comboOffer")
-    .lean();
-
-  return order
-    ? JSON.parse(JSON.stringify(order))
-    : null;
 }
 
 export default async function MockPaymentPage({
   params,
 }: RouteParams) {
   const { orderId } = await params;
-
-  const order = await getOrder(orderId);
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(`order_access_${orderId}`)?.value ?? "";
+  const order = await getOrder(orderId, accessToken);
 
   if (!order) {
     return (
@@ -138,13 +128,13 @@ export default async function MockPaymentPage({
 
   const itemCount =
     (order.items || []).reduce(
-      (total: number, item: any) =>
+      (total, item) =>
         total +
         Number(item.quantity || 0),
       0
     ) +
     (order.comboItems || []).reduce(
-      (total: number, combo: any) =>
+      (total, combo) =>
         total +
         Number(combo.quantity || 0),
       0
@@ -234,7 +224,7 @@ export default async function MockPaymentPage({
 
               <div className="mt-4 space-y-3">
                 {order.items?.map(
-                  (item: any) => (
+                  (item) => (
                     <div
                       key={item._id}
                       className="flex items-center justify-between gap-4 text-sm"
@@ -262,7 +252,7 @@ export default async function MockPaymentPage({
                 )}
 
                 {order.comboItems?.map(
-                  (combo: any) => (
+                  (combo) => (
                     <div
                       key={combo._id}
                       className="flex items-center justify-between gap-4 text-sm"

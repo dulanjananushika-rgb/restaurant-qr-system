@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { verifyToken } from "@/lib/auth";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { waiterWorkStatusSchema } from "@/validation/admin";
 
 import Order from "@/models/Order";
 import User from "@/models/User";
@@ -18,24 +21,10 @@ const waiterSelectableStatuses: WorkStatus[] = [
   "OFF_DUTY",
 ];
 
-async function getAuthenticatedWaiter(request: NextRequest) {
-  const token = request.cookies.get("restaurant_token")?.value;
-
-  if (!token) {
-    return null;
-  }
-
-  try {
-    const authUser = verifyToken(token);
-
-    if (authUser.role !== "WAITER") {
-      return null;
-    }
-
-    await connectDB();
-
-    const waiter = await User.findOne({
-      _id: authUser.id,
+async function getAuthenticatedWaiter(userId: string) {
+  await connectDB();
+  return User.findOne({
+      _id: userId,
       role: "WAITER",
       status: "ACTIVE",
     })
@@ -44,29 +33,20 @@ async function getAuthenticatedWaiter(request: NextRequest) {
       )
       .lean();
 
-    if (!waiter) {
-      return null;
-    }
-
-    return {
-      authUser,
-      waiter,
-    };
-  } catch {
-    return null;
-  }
 }
 
 /*
  * GET
  * Return the logged-in waiter's current work status.
  */
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const authenticatedWaiter =
-      await getAuthenticatedWaiter(request);
+    const routeAuth = await requireApiUser(request, ["WAITER"]);
+    if (!routeAuth.ok) return routeAuth.response;
 
-    if (!authenticatedWaiter) {
+    const waiter = await getAuthenticatedWaiter(routeAuth.user.id);
+
+    if (!waiter) {
       return NextResponse.json(
         {
           success: false,
@@ -77,8 +57,6 @@ export async function GET(request: NextRequest) {
         }
       );
     }
-
-    const { waiter } = authenticatedWaiter;
 
     const activeOrderCount = await Order.countDocuments({
       assignedWaiter: waiter._id,
@@ -113,21 +91,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Waiter work status GET error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load waiter work status.",
-        error:
-          error instanceof Error
-            ? error.message
-            : String(error),
-      },
-      {
-        status: 500,
-      }
-    );
+    return apiErrorResponse(error, "Waiter work status read failed");
   }
 }
 
@@ -141,12 +105,14 @@ export async function GET(request: NextRequest) {
  *
  * ON_LEAVE is controlled by the admin.
  */
-export async function PATCH(request: NextRequest) {
+export async function PATCH(request: Request) {
   try {
-    const authenticatedWaiter =
-      await getAuthenticatedWaiter(request);
+    const routeAuth = await requireApiUser(request, ["WAITER"]);
+    if (!routeAuth.ok) return routeAuth.response;
 
-    if (!authenticatedWaiter) {
+    const waiter = await getAuthenticatedWaiter(routeAuth.user.id);
+
+    if (!waiter) {
       return NextResponse.json(
         {
           success: false,
@@ -158,15 +124,10 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { waiter } = authenticatedWaiter;
-
-    const body = (await request.json()) as {
-      workStatus?: string;
-    };
-
-    const requestedStatus = body.workStatus as
-      | WorkStatus
-      | undefined;
+    const { workStatus: requestedStatus } = await parseJsonBody(
+      request,
+      waiterWorkStatusSchema
+    );
 
     if (
       !requestedStatus ||
@@ -370,20 +331,6 @@ export async function PATCH(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Waiter work status PATCH error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update waiter work status.",
-        error:
-          error instanceof Error
-            ? error.message
-            : String(error),
-      },
-      {
-        status: 500,
-      }
-    );
+    return apiErrorResponse(error, "Waiter work status update failed");
   }
 }

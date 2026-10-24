@@ -5,6 +5,7 @@ import MenuItem from "@/models/MenuItem";
 import "@/models/Category";
 
 import ComboOfferManager from "@/components/admin/ComboOfferManager";
+import type { MenuItemDto, PopulatedComboOfferDto } from "@/types/restaurant";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const runtime = "nodejs";
@@ -22,15 +23,15 @@ async function getComboOfferData() {
   ]);
 
   return {
-    comboOffers: JSON.parse(JSON.stringify(comboOffers)),
-    menuItems: JSON.parse(JSON.stringify(menuItems)),
+    comboOffers: JSON.parse(JSON.stringify(comboOffers)) as PopulatedComboOfferDto[],
+    menuItems: JSON.parse(JSON.stringify(menuItems)) as MenuItemDto[],
   };
 }
 
 export default async function AdminComboOffersPage() {
   const { comboOffers, menuItems } = await getComboOfferData();
 
-  const activeOffers = comboOffers.filter((offer: any) => offer.active);
+  const activeOffers = comboOffers.filter((offer) => offer.active);
 
   return (
     <div className="space-y-6">

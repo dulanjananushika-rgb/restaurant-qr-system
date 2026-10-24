@@ -18,6 +18,11 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import PrintReceiptButton from "@/components/cashier/PrintReceiptButton";
+import type {
+  PaymentDto,
+  PopulatedDiningSessionDto,
+  PopulatedRestaurantOrderDto,
+} from "@/types/restaurant";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,10 +38,15 @@ type RouteParams = {
 };
 
 type ReceiptData = {
-  diningSession: any | null;
-  payment: any | null;
-  orders: any[];
+  diningSession: PopulatedDiningSessionDto | null;
+  payment: PaymentDto | null;
+  orders: PopulatedRestaurantOrderDto[];
 };
+
+type PaymentOrderReference =
+  | string
+  | mongoose.Types.ObjectId
+  | { _id: string | mongoose.Types.ObjectId };
 
 /* =========================
    Formatting helpers
@@ -125,11 +135,12 @@ async function getCombinedReceiptData(
       })
       .lean();
 
-  let orderDocuments: any[] = [];
+  let orderDocuments: unknown[] = [];
 
   if (paymentDocument) {
-    const paymentData =
-      paymentDocument as any;
+    const paymentData = paymentDocument as unknown as {
+      orders?: PaymentOrderReference[];
+    };
 
     /*
      * A new combined payment stores the exact
@@ -139,7 +150,7 @@ async function getCombinedReceiptData(
       paymentData.orders
     )
       ? paymentData.orders
-          .map((orderReference: any) => {
+          .map((orderReference) => {
             if (!orderReference) {
               return null;
             }
@@ -206,17 +217,17 @@ async function getCombinedReceiptData(
   return {
     diningSession: JSON.parse(
       JSON.stringify(diningSessionDocument)
-    ),
+    ) as PopulatedDiningSessionDto,
 
     payment: paymentDocument
       ? JSON.parse(
           JSON.stringify(paymentDocument)
-        )
+        ) as PaymentDto
       : null,
 
     orders: JSON.parse(
       JSON.stringify(orderDocuments)
-    ),
+    ) as PopulatedRestaurantOrderDto[],
   };
 }
 
@@ -310,7 +321,7 @@ export default async function CombinedReceiptPage({
     "Dining Table";
 
   const combinedSubtotal = orders.reduce(
-    (total: number, order: any) =>
+    (total, order) =>
       total +
       Number(order.totalAmount || 0),
     0
@@ -324,7 +335,7 @@ export default async function CombinedReceiptPage({
     Array.from(
       new Set<string>(
         orders
-          .map((order: any) =>
+          .map((order) =>
             String(
               order.customerName || ""
             ).trim()
@@ -337,7 +348,7 @@ export default async function CombinedReceiptPage({
     Array.from(
       new Set<string>(
         orders
-          .map((order: any) =>
+          .map((order) =>
             String(
               order.customerPhone || ""
             ).trim()
@@ -347,13 +358,13 @@ export default async function CombinedReceiptPage({
     );
 
   const totalNormalItems = orders.reduce(
-    (total: number, order: any) =>
+    (total, order) =>
       total +
       (Array.isArray(order.items)
         ? order.items.reduce(
             (
               itemTotal: number,
-              item: any
+              item
             ) =>
               itemTotal +
               Number(item.quantity || 0),
@@ -364,13 +375,13 @@ export default async function CombinedReceiptPage({
   );
 
   const totalComboItems = orders.reduce(
-    (total: number, order: any) =>
+    (total, order) =>
       total +
       (Array.isArray(order.comboItems)
         ? order.comboItems.reduce(
             (
               comboTotal: number,
-              combo: any
+              combo
             ) =>
               comboTotal +
               Number(combo.quantity || 0),
@@ -593,7 +604,7 @@ export default async function CombinedReceiptPage({
 
             {orders.map(
               (
-                order: any,
+                order,
                 orderIndex: number
               ) => {
                 const orderTotal = Number(
@@ -685,7 +696,7 @@ export default async function CombinedReceiptPage({
 
                         <tbody>
                           {order.items?.map(
-                            (item: any) => (
+                            (item) => (
                               <tr
                                 key={item._id}
                                 className="border-b border-neutral-100"
@@ -726,7 +737,7 @@ export default async function CombinedReceiptPage({
                           )}
 
                           {order.comboItems?.map(
-                            (combo: any) => (
+                            (combo) => (
                               <tr
                                 key={combo._id}
                                 className="border-b border-neutral-100"
@@ -749,7 +760,7 @@ export default async function CombinedReceiptPage({
                                       <div className="mt-1 space-y-0.5 text-xs text-neutral-500">
                                         {combo.comboItemsSnapshot.map(
                                           (
-                                            snapshot: any,
+                                            snapshot,
                                             snapshotIndex: number
                                           ) => (
                                             <p

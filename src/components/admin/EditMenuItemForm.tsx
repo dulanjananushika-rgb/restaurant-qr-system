@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ImageIcon, Loader2, Save } from "lucide-react";
@@ -135,9 +137,12 @@ export default function EditMenuItemForm({
 
         {image && (
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-            <img
+            <Image
               src={image}
               alt="Menu item preview"
+              width={900}
+              height={504}
+              unoptimized
               className="h-56 w-full object-cover"
             />
           </div>

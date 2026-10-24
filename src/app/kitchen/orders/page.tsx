@@ -9,6 +9,7 @@ import "@/models/ComboOffer";
 
 import KitchenOrderManager from "@/components/kitchen/KitchenOrderManager";
 import LogoutButton from "@/components/auth/LogoutButton";
+import type { ActiveKitchenOrderDto } from "@/types/restaurant";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,26 +28,26 @@ async function getKitchenOrders() {
     .populate("comboItems.comboOffer")
     .lean();
 
-  return JSON.parse(JSON.stringify(orders));
+  return JSON.parse(JSON.stringify(orders)) as ActiveKitchenOrderDto[];
 }
 
 export default async function KitchenOrdersPage() {
   const orders = await getKitchenOrders();
 
   const pendingOrders = orders.filter(
-    (order: any) => order.status === "PENDING"
+    (order) => order.status === "PENDING"
   ).length;
 
   const acceptedOrders = orders.filter(
-    (order: any) => order.status === "ACCEPTED"
+    (order) => order.status === "ACCEPTED"
   ).length;
 
   const preparingOrders = orders.filter(
-    (order: any) => order.status === "PREPARING"
+    (order) => order.status === "PREPARING"
   ).length;
 
   const readyOrders = orders.filter(
-    (order: any) => order.status === "READY"
+    (order) => order.status === "READY"
   ).length;
 
   return (

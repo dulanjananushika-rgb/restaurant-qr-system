@@ -222,7 +222,7 @@ export default function TableActions({ table }: { table: Table }) {
             <div className="mb-4">
               <h3 className="text-xl font-semibold text-red-300">Delete Table?</h3>
               <p className="mt-2 text-sm text-neutral-400">
-                Are you sure you want to permanently delete <span className="font-semibold text-white">"{table.name}"</span>?
+                Are you sure you want to permanently delete <span className="font-semibold text-white">&quot;{table.name}&quot;</span>?
                 This action cannot be undone.
               </p>
             </div>

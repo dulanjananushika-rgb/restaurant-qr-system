@@ -81,6 +81,8 @@ type Order = {
   statusHistory?: StatusHistoryItem[];
 };
 
+type KitchenFilter = "ALL" | Order["status"];
+
 function statusClass(status: string) {
   if (status === "PENDING") {
     return "border-amber-500/20 bg-amber-500/10 text-amber-300";
@@ -224,9 +226,7 @@ export default function KitchenOrderManager({ orders }: { orders: Order[] }) {
   const router = useRouter();
 
   const [updatingOrderId, setUpdatingOrderId] = useState("");
-  const [filter, setFilter] = useState<
-    "ALL" | "PENDING" | "ACCEPTED" | "PREPARING" | "READY"
-  >("ALL");
+  const [filter, setFilter] = useState<KitchenFilter>("ALL");
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
@@ -332,7 +332,7 @@ export default function KitchenOrderManager({ orders }: { orders: Order[] }) {
           <button
             key={status}
             type="button"
-            onClick={() => setFilter(status as any)}
+            onClick={() => setFilter(status as KitchenFilter)}
             className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
               filter === status
                 ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-300"

@@ -1,24 +1,20 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 
 import AddMenuItemForm from "@/components/admin/AddMenuItemForm";
-import { getAppUrl } from "@/lib/appUrl";
+import { connectDB } from "@/lib/mongodb";
+import Category from "@/models/Category";
 
 async function getCategories() {
-  const appUrl = getAppUrl();
-
-  const res = await fetch(`${appUrl}/api/admin/categories`, {
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch categories");
-  }
-
-  return res.json();
+  await connectDB();
+  return Category.find().sort({ createdAt: -1 }).lean();
 }
 
 export default async function NewMenuItemPage() {
-  const result = await getCategories();
-  const categories = result?.data || [];
+  const categoryDocuments = await getCategories();
+  const categories = JSON.parse(JSON.stringify(categoryDocuments));
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import Table from "@/models/Table";
 import Order from "@/models/Order";
 import { createAuditLog } from "@/lib/audit";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { updateTableSchema } from "@/validation/admin";
 
 type RouteParams = {
   params: Promise<{
@@ -12,39 +16,22 @@ type RouteParams = {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
     const { id } = await params;
-    const body = await request.json();
-    const { name, capacity, status } = body;
-
-    if (!name && !capacity && !status) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "At least one field (name, capacity, or status) is required to update",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, capacity, status } = await parseJsonBody(
+      request,
+      updateTableSchema
+    );
 
     const updateData: Record<string, unknown> = {};
 
-    if (name && typeof name === "string") {
-      updateData.name = name.trim();
-    }
+    if (name !== undefined) updateData.name = name;
     if (capacity !== undefined) {
-      const cap = Number(capacity);
-      if (cap < 1) {
-        return NextResponse.json(
-          { success: false, message: "Capacity must be at least 1" },
-          { status: 400 }
-        );
-      }
-      updateData.capacity = cap;
+      updateData.capacity = capacity;
     }
-    if (status && ["AVAILABLE", "OCCUPIED", "RESERVED", "INACTIVE"].includes(status)) {
-      updateData.status = status;
-    }
+    if (status !== undefined) updateData.status = status;
 
     const table = await Table.findByIdAndUpdate(id, updateData, {
       new: true,
@@ -62,7 +49,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       action: "TABLE_UPDATED",
       module: "TABLES",
       description: `Table "${table.name}" was updated`,
-      performedBy: "Admin",
+      performedBy: auth.user.email,
       metadata: { tableId: id, updatedFields: Object.keys(updateData) },
     });
 
@@ -72,20 +59,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       data: table,
     });
   } catch (error) {
-    console.error("Tables PATCH API error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update table",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Table update failed");
   }
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
     const { id } = await params;
 
@@ -113,7 +94,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       action: "TABLE_DELETED",
       module: "TABLES",
       description: `Table "${deletedTable.name}" was permanently deleted`,
-      performedBy: "Admin",
+      performedBy: auth.user.email,
       metadata: { tableId: id, tableName: deletedTable.name },
     });
 
@@ -122,14 +103,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       message: "Table deleted successfully",
     });
   } catch (error) {
-    console.error("Tables DELETE API error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to delete table",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Table deletion failed");
   }
 }

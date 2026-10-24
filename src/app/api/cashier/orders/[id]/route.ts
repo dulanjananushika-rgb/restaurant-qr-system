@@ -1,159 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import { createAuditLog } from "@/lib/audit";
-import { verifyToken } from "@/lib/auth";
 
-import Order from "@/models/Order";
-import "@/models/Table";
-import "@/models/User";
+import { transitionOrder } from "@/application/orders/transition-order";
+import { DELIVERY_STATUSES } from "@/domain/order/status-machine";
+import { requireApiUser } from "@/lib/api/auth";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { deliveryTransitionSchema } from "@/validation/order";
 
-type RouteParams = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
-type WaiterStatus = "PICKED_UP" | "DELIVERED";
-
-const allowedWaiterStatuses: WaiterStatus[] = ["PICKED_UP", "DELIVERED"];
-
-function isValidWaiterTransition(currentStatus: string, nextStatus: string) {
-  const transitions: Record<string, string[]> = {
-    READY: ["PICKED_UP"],
-    PICKED_UP: ["DELIVERED"],
-    DELIVERED: [],
-  };
-
-  return transitions[currentStatus]?.includes(nextStatus) || false;
-}
+type RouteParams = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const auth = await requireApiUser(request, ["CASHIER", "ADMIN"]);
+  if (!auth.ok) return auth.response;
+
   try {
-    await connectDB();
-
-    const token = request.cookies.get("restaurant_token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Unauthorized",
-        },
-        { status: 401 }
-      );
-    }
-
-    const authUser = verifyToken(token);
-
-    if (authUser.role !== "WAITER" && authUser.role !== "ADMIN") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Access denied",
-        },
-        { status: 403 }
-      );
-    }
-
     const { id } = await params;
-    const body = await request.json();
-
-    const { status, note = "" } = body as {
-      status?: string;
-      note?: string;
-    };
-
-    if (!status || !allowedWaiterStatuses.includes(status as WaiterStatus)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid waiter status",
-        },
-        { status: 400 }
-      );
-    }
-
-    const order = await Order.findById(id).populate("table");
-
-    if (!order) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Order not found",
-        },
-        { status: 404 }
-      );
-    }
-
-    const orderDoc = order as any;
-
-    if (!isValidWaiterTransition(orderDoc.status, status)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Cannot change order from ${orderDoc.status} to ${status}`,
-        },
-        { status: 400 }
-      );
-    }
-
-    const previousStatus = orderDoc.status;
-
-    orderDoc.status = status;
-
-    if (status === "PICKED_UP") {
-      orderDoc.pickedUpAt = new Date();
-    }
-
-    if (status === "DELIVERED") {
-      orderDoc.deliveredAt = new Date();
-    }
-
-    if (!Array.isArray(orderDoc.statusHistory)) {
-      orderDoc.statusHistory = [];
-    }
-
-    orderDoc.statusHistory.push({
-      fromStatus: previousStatus,
-      toStatus: status,
-      changedBy: authUser.id,
-      changedByName: authUser.name,
-      changedByRole: authUser.role,
-      note,
-      changedAt: new Date(),
+    const input = await parseJsonBody(request, deliveryTransitionSchema);
+    const data = await transitionOrder(id, input.status, input.note, auth.user, {
+      channel: "CASHIER_DELIVERY",
+      allowedStatuses: DELIVERY_STATUSES,
     });
-
-    await orderDoc.save();
-
-    const tableName =
-      orderDoc.table && typeof orderDoc.table === "object" && orderDoc.table.name
-        ? String(orderDoc.table.name)
-        : "Unknown table";
-
-    await createAuditLog({
-      action: "WAITER_ORDER_UPDATED",
-      module: "WAITER",
-      description: `${authUser.name} changed Order #${orderDoc._id
-        .toString()
-        .slice(-6)
-        .toUpperCase()} for ${tableName} from ${previousStatus} to ${status}.`,
-    });
-
     return NextResponse.json({
       success: true,
-      message: "Waiter order updated successfully",
-      data: JSON.parse(JSON.stringify(orderDoc)),
+      message: "Order updated successfully",
+      data,
     });
   } catch (error) {
-    console.error("Waiter order PATCH error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update waiter order",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Cashier order update failed");
   }
 }

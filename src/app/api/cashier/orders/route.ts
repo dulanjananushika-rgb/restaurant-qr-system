@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 
 import Order from "@/models/Order";
 import "@/models/Table";
 import "@/models/MenuItem";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["CASHIER", "ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const orders = await Order.find({

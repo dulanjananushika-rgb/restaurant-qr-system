@@ -1,5 +1,6 @@
 import Link from "next/link";
 import mongoose from "mongoose";
+import { cookies } from "next/headers";
 
 import {
   ArrowLeft,
@@ -12,9 +13,13 @@ import {
 } from "lucide-react";
 
 import { connectDB } from "@/lib/mongodb";
+import { getCustomerOrder } from "@/application/orders/update-order";
 
-import Order from "@/models/Order";
 import Payment from "@/models/Payment";
+import type {
+  PaymentDto,
+  PopulatedRestaurantOrderDto,
+} from "@/types/restaurant";
 
 import "@/models/Table";
 
@@ -56,7 +61,7 @@ function formatDateTime(
   }).format(date);
 }
 
-function getCustomerMenuUrl(order: any) {
+function getCustomerMenuUrl(order: PopulatedRestaurantOrderDto) {
   if (
     order.orderType === "TAKE_AWAY"
   ) {
@@ -73,7 +78,8 @@ function getCustomerMenuUrl(order: any) {
 }
 
 async function getPaymentData(
-  orderId: string
+  orderId: string,
+  token: string
 ) {
   await connectDB();
 
@@ -86,15 +92,14 @@ async function getPaymentData(
     };
   }
 
-  const [
-    orderDocument,
-    paymentDocument,
-  ] = await Promise.all([
-    Order.findById(orderId)
-      .populate("table")
-      .lean(),
+  let orderDocument;
+  try {
+    orderDocument = await getCustomerOrder(orderId, token);
+  } catch {
+    return { order: null, payment: null };
+  }
 
-    Payment.findOne({
+  const paymentDocument = await Payment.findOne({
       order: orderId,
       status: "PAID",
     })
@@ -102,20 +107,19 @@ async function getPaymentData(
         paidAt: -1,
         createdAt: -1,
       })
-      .lean(),
-  ]);
+      .lean();
 
   return {
     order: orderDocument
       ? JSON.parse(
           JSON.stringify(orderDocument)
-        )
+        ) as PopulatedRestaurantOrderDto
       : null,
 
     payment: paymentDocument
       ? JSON.parse(
           JSON.stringify(paymentDocument)
-        )
+        ) as PaymentDto
       : null,
   };
 }
@@ -124,11 +128,13 @@ export default async function PaymentSuccessPage({
   params,
 }: RouteParams) {
   const { orderId } = await params;
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(`order_access_${orderId}`)?.value ?? "";
 
   const {
     order,
     payment,
-  } = await getPaymentData(orderId);
+  } = await getPaymentData(orderId, accessToken);
 
   if (!order) {
     return (
@@ -157,11 +163,7 @@ export default async function PaymentSuccessPage({
   const menuUrl =
     getCustomerMenuUrl(order);
 
-  const paymentCompleted =
-    order.paymentStatus === "PAID" &&
-    Boolean(payment);
-
-  if (!paymentCompleted) {
+  if (order.paymentStatus !== "PAID" || !payment) {
     return (
       <main className="min-h-screen bg-[#0b0f14] px-5 py-10 text-white">
         <div className="mx-auto max-w-2xl">

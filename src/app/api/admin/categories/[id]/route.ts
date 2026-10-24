@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import { createAuditLog } from "@/lib/audit";
 
 import Category from "@/models/Category";
 import MenuItem from "@/models/MenuItem";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { categorySchema } from "@/validation/admin";
 
 type RouteParams = {
   params: Promise<{
@@ -13,31 +17,18 @@ type RouteParams = {
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
-    const body = await request.json();
-
-    const { name, description } = body as {
-      name?: string;
-      description?: string;
-    };
-
-    if (!name || !name.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Category name is required",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, description } = await parseJsonBody(request, categorySchema);
 
     const updatedCategory = await Category.findByIdAndUpdate(
       id,
       {
-        name: name.trim(),
-        description: description?.trim() || "",
+        name,
+        description,
       },
       { new: true }
     );
@@ -64,21 +55,14 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       data: updatedCategory,
     });
   } catch (error) {
-    console.error("Category PATCH API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update category",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Category update failed");
   }
 }
 
 export async function DELETE(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
@@ -123,15 +107,6 @@ export async function DELETE(request: Request, { params }: RouteParams) {
       message: "Category deleted successfully",
     });
   } catch (error) {
-    console.error("Category DELETE API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to delete category",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Category deletion failed");
   }
 }

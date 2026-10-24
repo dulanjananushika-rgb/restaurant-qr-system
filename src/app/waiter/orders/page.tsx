@@ -20,6 +20,7 @@ import "@/models/ComboOffer";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import WaiterOrderManager from "@/components/waiter/WaiterOrderManager";
+import type { WaiterOrder } from "@/components/waiter/WaiterOrderManager";
 import WaiterWorkStatusControl from "@/components/waiter/WaiterWorkStatusControl";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ type WorkStatus =
   | "ON_LEAVE";
 
 type PageData = {
-  orders: any[];
+  orders: WaiterOrder[];
   viewerRole: "ADMIN" | "WAITER";
   workStatus: WorkStatus | null;
 };
@@ -43,7 +44,7 @@ type PageData = {
  * Add all required populate operations
  * to a waiter order query.
  */
-function populateWaiterOrderQuery(query: any) {
+function populateWaiterOrderQuery(query: ReturnType<typeof Order.find>) {
   return query
     .populate({
       path: "table",
@@ -111,7 +112,7 @@ async function getWaiterPageData(): Promise<PageData> {
     redirect("/login");
   }
 
-  const activeUserData = activeUser as any;
+  const activeUserData = activeUser as unknown as { workStatus?: WorkStatus | null };
 
   /* =========================
      Admin view
@@ -138,7 +139,7 @@ async function getWaiterPageData(): Promise<PageData> {
     return {
       orders: JSON.parse(
         JSON.stringify(adminOrders)
-      ),
+      ) as WaiterOrder[],
       viewerRole: "ADMIN",
       workStatus: null,
     };
@@ -188,7 +189,7 @@ async function getWaiterPageData(): Promise<PageData> {
     return {
       orders: JSON.parse(
         JSON.stringify(existingOrders)
-      ),
+      ) as WaiterOrder[],
       viewerRole: "WAITER",
       workStatus: currentWorkStatus,
     };
@@ -226,9 +227,7 @@ async function getWaiterPageData(): Promise<PageData> {
     .select("_id")
     .lean();
 
-  const onDutyWaiterIds = onDutyWaiters.map(
-    (waiter: any) => String(waiter._id)
-  );
+  const onDutyWaiterIds = onDutyWaiters.map((waiter) => String(waiter._id));
 
   /*
    * Tables assigned to the logged-in waiter.
@@ -239,9 +238,7 @@ async function getWaiterPageData(): Promise<PageData> {
     .select("_id")
     .lean();
 
-  const primaryTableIds = primaryTables.map(
-    (table: any) => String(table._id)
-  );
+  const primaryTableIds = primaryTables.map((table) => String(table._id));
 
   /*
    * Shared tables do not have a primary waiter.
@@ -263,9 +260,7 @@ async function getWaiterPageData(): Promise<PageData> {
     .select("_id")
     .lean();
 
-  const sharedTableIds = sharedTables.map(
-    (table: any) => String(table._id)
-  );
+  const sharedTableIds = sharedTables.map((table) => String(table._id));
 
   /*
    * Find tables whose primary waiter is:
@@ -292,9 +287,7 @@ async function getWaiterPageData(): Promise<PageData> {
       .lean();
 
   const unavailablePrimaryTableIds =
-    unavailablePrimaryTables.map(
-      (table: any) => String(table._id)
-    );
+    unavailablePrimaryTables.map((table) => String(table._id));
 
   /*
    * Four-minute backup cutoff.
@@ -497,7 +490,7 @@ async function getWaiterPageData(): Promise<PageData> {
   return {
     orders: JSON.parse(
       JSON.stringify(waiterOrders)
-    ),
+    ) as WaiterOrder[],
     viewerRole: "WAITER",
     workStatus: currentWorkStatus,
   };

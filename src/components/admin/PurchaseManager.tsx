@@ -31,7 +31,12 @@ type Purchase = {
   supplier?: Supplier;
   invoiceNumber?: string;
   purchaseDate: string;
-  items: any[];
+  items: Array<{
+    inventoryItem?: InventoryItem;
+    quantity: number;
+    unitCost: number;
+    totalCost: number;
+  }>;
   totalAmount: number;
   paymentStatus: "UNPAID" | "PAID" | "PARTIALLY_PAID";
   note?: string;

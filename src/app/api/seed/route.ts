@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { connectDB } from "@/lib/mongodb";
+import { requireApiUser } from "@/lib/api/auth";
 
 import User from "@/models/User";
 import Category from "@/models/Category";
@@ -10,25 +11,62 @@ import InventoryItem from "@/models/InventoryItem";
 import RecipeItem from "@/models/RecipeItem";
 import ComboOffer from "@/models/ComboOffer";
 import Order from "@/models/Order";
+import Payment from "@/models/Payment";
+import DiningSession from "@/models/DiningSession";
+import Purchase from "@/models/Purchase";
+import StockMovement from "@/models/StockMovement";
+import Supplier from "@/models/Supplier";
+import TestMessage from "@/models/TestMessage";
+import { runInTransaction } from "@/lib/db/transaction";
+import { ApiError, apiErrorResponse } from "@/lib/api/errors";
+import { createAuditLog } from "@/lib/audit";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
+
+    if (process.env.ALLOW_DATABASE_SEED !== "true") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Database seeding is disabled. Set ALLOW_DATABASE_SEED=true temporarily to enable it.",
+        },
+        { status: 403 }
+      );
+    }
+
     await connectDB();
 
+    const seedPassword = process.env.SEED_USER_PASSWORD ?? "";
+    if (seedPassword.length < 12) {
+      throw new ApiError(
+        503,
+        "SEED_USER_PASSWORD must contain at least 12 characters before seeding is allowed.",
+        "SEED_PASSWORD_NOT_CONFIGURED"
+      );
+    }
+
+    return runInTransaction(async () => {
+
     // Clear demo data
-    await Promise.all([
-      User.deleteMany({}),
-      Category.deleteMany({}),
-      MenuItem.deleteMany({}),
-      Table.deleteMany({}),
-      InventoryItem.deleteMany({}),
-      RecipeItem.deleteMany({}),
-      ComboOffer.deleteMany({}),
-      Order.deleteMany({}),
-    ]);
+    await Payment.deleteMany({});
+    await DiningSession.deleteMany({});
+    await StockMovement.deleteMany({});
+    await Purchase.deleteMany({});
+    await Supplier.deleteMany({});
+    await TestMessage.deleteMany({});
+    await Order.deleteMany({});
+    await RecipeItem.deleteMany({});
+    await ComboOffer.deleteMany({});
+    await MenuItem.deleteMany({});
+    await Category.deleteMany({});
+    await InventoryItem.deleteMany({});
+    await Table.deleteMany({});
+    await User.deleteMany({});
 
     // Users / Staff
-    const hashedPassword = await bcrypt.hash("123456", 10);
+    const hashedPassword = await bcrypt.hash(seedPassword, 12);
 
     const users = await User.insertMany([
       {
@@ -597,6 +635,14 @@ export async function POST() {
       },
     ]);
 
+    await createAuditLog({
+      action: "DATABASE_SEEDED",
+      module: "SYSTEM",
+      description: "An administrator replaced the database with sample data.",
+      performedBy: auth.user.email,
+      metadata: { seededAt: new Date().toISOString() },
+    }, { failClosed: true });
+
     return NextResponse.json({
       success: true,
       message: "Sample data seeded successfully",
@@ -609,23 +655,16 @@ export async function POST() {
         combos: 2,
         sampleOrders: 2,
         loginCredentials: {
-          admin: "admin@saffron.com / 123456",
-          kitchen: "kitchen@saffron.com / 123456",
-          waiter: "waiter@saffron.com / 123456",
-          cashier: "cashier@saffron.com / 123456",
+          admin: "admin@saffron.com",
+          kitchen: "kitchen@saffron.com",
+          waiter: "waiter@saffron.com",
+          cashier: "cashier@saffron.com",
+          passwordSource: "SEED_USER_PASSWORD",
         },
       },
     });
+    });
   } catch (error) {
-    console.error("Seed API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to seed sample data",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Database seed failed");
   }
 }

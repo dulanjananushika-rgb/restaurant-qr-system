@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 
 import MenuItem from "@/models/MenuItem";
 import "@/models/Category";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { menuItemSchema } from "@/validation/admin";
 
 type RouteParams = {
   params: Promise<{
@@ -10,8 +14,10 @@ type RouteParams = {
   }>;
 };
 
-export async function GET(_request: Request, { params }: RouteParams) {
+export async function GET(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
@@ -33,59 +39,31 @@ export async function GET(_request: Request, { params }: RouteParams) {
       data: menuItem,
     });
   } catch (error) {
-    console.error("Single Menu GET error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load menu item",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Menu item read failed");
   }
 }
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
-    const body = await request.json();
-
-    const { name, price, category, available, image, description } = body;
-
-    if (!name || !price || !category) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Name, price and category are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (Number(price) <= 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Price must be greater than 0",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, price, category, available, image, description } =
+      await parseJsonBody(request, menuItemSchema);
 
     const updatedMenuItem = await MenuItem.findByIdAndUpdate(
       id,
       {
         name,
-        price: Number(price),
+        price,
         category,
-        available: Boolean(available),
-        image: image || "",
-        description: description || "",
+        available,
+        image,
+        description,
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!updatedMenuItem) {
@@ -104,15 +82,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       data: updatedMenuItem,
     });
   } catch (error) {
-    console.error("Single Menu PATCH error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update menu item",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Menu item update failed");
   }
 }

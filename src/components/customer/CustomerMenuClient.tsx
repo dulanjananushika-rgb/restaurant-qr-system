@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -112,10 +113,6 @@ type ActiveOrder = {
   paymentType: "PAY_NOW" | "PAY_LATER";
   createdAt: string;
 };
-
-function formatCurrency(amount: number) {
-  return `Rs. ${Number(amount || 0).toLocaleString("en-US")}`;
-}
 
 function getOrderStorageKey(tableId: string) {
   return `restaurant_active_order_${tableId}`;
@@ -286,10 +283,11 @@ export default function CustomerMenuClient({
     );
   }
 
-  async function loadActiveOrder(orderId: string) {
+  const loadActiveOrder = useCallback(async (orderId: string, token: string) => {
     try {
       const response = await fetch(`/api/public/orders/${orderId}`, {
         cache: "no-store",
+        headers: { "x-order-token": token },
       });
 
       const result = await response.json();
@@ -307,38 +305,40 @@ export default function CustomerMenuClient({
     } catch {
       // Do not break customer menu if order status refresh fails.
     }
-  }
+  }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem(getOrderStorageKey(table._id));
+    const timer = window.setTimeout(() => {
+      const saved = localStorage.getItem(getOrderStorageKey(table._id));
+      if (!saved) return;
 
-    if (!saved) return;
+      try {
+        const parsed = JSON.parse(saved) as {
+          orderId?: string;
+          editToken?: string;
+        };
 
-    try {
-      const parsed = JSON.parse(saved) as {
-        orderId?: string;
-        editToken?: string;
-      };
-
-      if (parsed.orderId) {
-        setActiveOrderId(parsed.orderId);
-        setEditToken(parsed.editToken || "");
-        loadActiveOrder(parsed.orderId);
+        if (parsed.orderId) {
+          setActiveOrderId(parsed.orderId);
+          setEditToken(parsed.editToken || "");
+          void loadActiveOrder(parsed.orderId, parsed.editToken || "");
+        }
+      } catch {
+        localStorage.removeItem(getOrderStorageKey(table._id));
       }
-    } catch {
-      localStorage.removeItem(getOrderStorageKey(table._id));
-    }
-  }, [table._id]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadActiveOrder, table._id]);
 
   useEffect(() => {
     if (!activeOrderId) return;
 
     const interval = setInterval(() => {
-      loadActiveOrder(activeOrderId);
+      void loadActiveOrder(activeOrderId, editToken);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [activeOrderId]);
+  }, [activeOrderId, editToken, loadActiveOrder]);
 
   function addToCart(menuItem: MenuItem) {
     setError("");
@@ -600,7 +600,7 @@ export default function CustomerMenuClient({
       setActiveOrderId(orderId);
       setEditToken(returnedEditToken);
 
-      await loadActiveOrder(orderId);
+      await loadActiveOrder(orderId, returnedEditToken);
 
       if (paymentType === "PAY_NOW") {
         router.push(`/payment/${orderId}`);
@@ -816,9 +816,12 @@ export default function CustomerMenuClient({
                     >
                       <div className="relative h-40 w-full shrink-0 bg-white/10">
                         {combo.image ? (
-                          <img
+                          <Image
                             src={combo.image}
                             alt={combo.name}
+                            width={600}
+                            height={320}
+                            unoptimized
                             className="h-full w-full object-cover"
                           />
                         ) : (
@@ -979,9 +982,12 @@ export default function CustomerMenuClient({
               >
                 <div className="relative h-48 w-full bg-white/10">
                   {item.image ? (
-                    <img
+                    <Image
                       src={item.image}
                       alt={item.name}
+                      width={720}
+                      height={384}
+                      unoptimized
                       className="h-full w-full object-cover"
                     />
                   ) : (

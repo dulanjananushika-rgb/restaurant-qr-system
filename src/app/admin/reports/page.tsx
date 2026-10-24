@@ -2,6 +2,24 @@ import { connectDB } from "@/lib/mongodb";
 import Order from "@/models/Order";
 import Payment from "@/models/Payment";
 import { DollarSign, TrendingUp, Users, AlertTriangle } from "lucide-react";
+import type { PaymentMethod } from "@/domain/order/types";
+
+type ReportOrder = {
+  _id: { toString(): string };
+  paymentStatus: string;
+  totalAmount: number;
+};
+
+type ReportPayment = { method: PaymentMethod };
+
+type RankedSale = {
+  _id: unknown;
+  name: string;
+  totalSold: number;
+  revenue: number;
+};
+
+type RecentPaidOrder = { _id: string; totalAmount: number };
 
 export const dynamic = "force-dynamic";
 
@@ -12,33 +30,33 @@ async function getReportsData() {
   today.setHours(0, 0, 0, 0);
 
   // Today's data
-  const todayOrders = await Order.find({
+  const todayOrders = (await Order.find({
     createdAt: { $gte: today },
     status: { $ne: "CANCELLED" },
-  }).lean();
+  }).lean()) as unknown as ReportOrder[];
 
   const todayCollection = todayOrders
-    .filter((o: any) => o.paymentStatus === "PAID")
-    .reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+    .filter((order) => order.paymentStatus === "PAID")
+    .reduce((sum, order) => sum + (order.totalAmount || 0), 0);
 
   // Overall stats
   const totalOrders = await Order.countDocuments({ status: { $ne: "CANCELLED" } });
   const completedOrders = await Order.countDocuments({ status: "DELIVERED" });
   const cancelledOrders = await Order.countDocuments({ status: "CANCELLED" });
 
-  const paidOrders = await Order.find({ paymentStatus: "PAID" }).lean();
+  const paidOrders = (await Order.find({ paymentStatus: "PAID" }).lean()) as unknown as ReportOrder[];
   const totalPaidCollection = paidOrders.reduce(
-    (sum: number, o: any) => sum + (o.totalAmount || 0),
+    (sum, order) => sum + (order.totalAmount || 0),
     0
   );
 
-  const unpaidOrders = await Order.find({
+  const unpaidOrders = (await Order.find({
     paymentStatus: { $in: ["UNPAID", "PENDING", "PARTIALLY_PAID"] },
     status: { $ne: "CANCELLED" },
-  }).lean();
+  }).lean()) as unknown as ReportOrder[];
 
   const totalUnpaidAmount = unpaidOrders.reduce(
-    (sum: number, o: any) => sum + (o.totalAmount || 0),
+    (sum, order) => sum + (order.totalAmount || 0),
     0
   );
 
@@ -52,10 +70,10 @@ async function getReportsData() {
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    const dayOrders = await Order.find({
+    const dayOrders = (await Order.find({
       createdAt: { $gte: date, $lt: nextDay },
       paymentStatus: "PAID",
-    }).lean();
+    }).lean()) as unknown as ReportOrder[];
 
     const dayTotal = dayOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
     last7Days.push({
@@ -65,13 +83,13 @@ async function getReportsData() {
   }
 
   // Payment method summary
-  const payments = await Payment.find().lean();
-  const cashCount = payments.filter((p: any) => p.method === "CASH").length;
-  const cardCount = payments.filter((p: any) => p.method === "CARD").length;
-  const onlineCount = payments.filter((p: any) => p.method === "ONLINE").length;
+  const payments = (await Payment.find().lean()) as unknown as ReportPayment[];
+  const cashCount = payments.filter((payment) => payment.method === "CASH").length;
+  const cardCount = payments.filter((payment) => payment.method === "CARD").length;
+  const onlineCount = payments.filter((payment) => payment.method === "ONLINE").length;
 
   // Top selling menu items
-  const topMenuItems = await Order.aggregate([
+  const topMenuItems = await Order.aggregate<RankedSale>([
     { $unwind: "$items" },
     {
       $group: {
@@ -101,7 +119,7 @@ async function getReportsData() {
   ]);
 
   // Top selling combos
-  const topCombos = await Order.aggregate([
+  const topCombos = await Order.aggregate<RankedSale>([
     { $unwind: "$comboItems" },
     {
       $group: {
@@ -137,7 +155,7 @@ async function getReportsData() {
     .populate("table")
     .lean();
 
-  const recentPaidOrders = recentPaidOrdersRaw.map((order: any) => ({
+  const recentPaidOrders: RecentPaidOrder[] = recentPaidOrdersRaw.map((order) => ({
     ...order,
     _id: order._id.toString(),
   }));
@@ -235,7 +253,7 @@ export default async function AdminReportsPage() {
           <h2 className="text-lg font-semibold mb-4">Top Selling Menu Items</h2>
           <div className="space-y-3">
             {data.topMenuItems.length > 0 ? (
-              data.topMenuItems.map((item: any, index: number) => (
+              data.topMenuItems.map((item, index) => (
                 <div key={index} className="flex justify-between items-center rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                   <div>
                     <p className="font-medium">{item.name}</p>
@@ -255,7 +273,7 @@ export default async function AdminReportsPage() {
           <h2 className="text-lg font-semibold mb-4">Top Selling Combo Offers</h2>
           <div className="space-y-3">
             {data.topCombos.length > 0 ? (
-              data.topCombos.map((item: any, index: number) => (
+              data.topCombos.map((item, index) => (
                 <div key={index} className="flex justify-between items-center rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
                   <div>
                     <p className="font-medium">{item.name}</p>
@@ -297,7 +315,7 @@ export default async function AdminReportsPage() {
           <h2 className="text-lg font-semibold mb-4">Recent Paid Orders</h2>
           <div className="space-y-2 text-sm">
             {data.recentPaidOrders.length > 0 ? (
-              data.recentPaidOrders.map((order: any) => (
+              data.recentPaidOrders.map((order) => (
                 <div 
                   key={order._id} 
                   className="flex justify-between border-b border-white/10 pb-2 last:border-none"

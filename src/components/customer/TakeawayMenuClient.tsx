@@ -3,18 +3,33 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type TakeawayCategory = { _id: string; name: string };
+type TakeawayMenuItem = { _id: string; name: string; price: number };
+type TakeawayComboOffer = {
+  _id: string;
+  name: string;
+  originalPrice: number;
+  offerPrice: number;
+};
+type CartItem = {
+  id: string;
+  type: "MENU_ITEM" | "COMBO";
+  name: string;
+  price: number;
+  quantity: number;
+};
+
 export default function TakeawayMenuClient({
-  categories,
   menuItems,
   comboOffers,
 }: {
-  categories: any[];
-  menuItems: any[];
-  comboOffers: any[];
+  categories: TakeawayCategory[];
+  menuItems: TakeawayMenuItem[];
+  comboOffers: TakeawayComboOffer[];
 }) {
   const router = useRouter();
 
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [paymentType, setPaymentType] = useState<"PAY_NOW" | "PAY_LATER">("PAY_LATER");
@@ -24,7 +39,7 @@ export default function TakeawayMenuClient({
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   // Add Menu Item
-  function addMenuItem(item: any) {
+  function addMenuItem(item: TakeawayMenuItem) {
     setCart((current) => {
       const existing = current.find((i) => i.id === item._id && i.type === "MENU_ITEM");
       if (existing) {
@@ -48,7 +63,7 @@ export default function TakeawayMenuClient({
   }
 
   // Add Combo Offer
-  function addCombo(combo: any) {
+  function addCombo(combo: TakeawayComboOffer) {
     setCart((current) => {
       const existing = current.find((i) => i.id === combo._id && i.type === "COMBO");
       if (existing) {
@@ -139,7 +154,7 @@ export default function TakeawayMenuClient({
         setCart([]);
         router.refresh();
       }
-    } catch (err) {
+    } catch {
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
@@ -153,7 +168,7 @@ export default function TakeawayMenuClient({
         {/* Menu Items */}
         <div>
           <h2 className="text-2xl font-bold mb-4">Menu Items</h2>
-          {menuItems.map((item: any) => (
+          {menuItems.map((item) => (
             <div key={item._id} className="flex justify-between items-center border-b border-white/10 py-3">
               <div>
                 <p className="font-semibold">{item.name}</p>
@@ -173,7 +188,7 @@ export default function TakeawayMenuClient({
         {comboOffers.length > 0 && (
           <div>
             <h2 className="text-2xl font-bold mb-4">Combo Offers</h2>
-            {comboOffers.map((combo: any) => (
+            {comboOffers.map((combo) => (
               <div key={combo._id} className="flex justify-between items-center border-b border-white/10 py-3">
                 <div>
                   <p className="font-semibold">{combo.name}</p>

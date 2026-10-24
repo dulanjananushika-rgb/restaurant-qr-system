@@ -256,7 +256,10 @@ export default function TableAssignmentsPage() {
   );
 
   useEffect(() => {
-    void loadAssignments(true);
+    const timer = window.setTimeout(() => {
+      void loadAssignments(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadAssignments]);
 
   /*

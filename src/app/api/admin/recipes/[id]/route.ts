@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import { revalidatePath } from "next/cache"; // ← Import කළා
 
 import RecipeItem from "@/models/RecipeItem";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { recipeQuantitySchema } from "@/validation/admin";
 
 type RouteParams = {
   params: Promise<{
@@ -12,29 +16,22 @@ type RouteParams = {
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
-    const body = await request.json();
-
-    const { requiredQuantity } = body;
-
-    if (!requiredQuantity || Number(requiredQuantity) <= 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Required quantity must be greater than 0",
-        },
-        { status: 400 }
-      );
-    }
+    const { requiredQuantity } = await parseJsonBody(
+      request,
+      recipeQuantitySchema
+    );
 
     const recipe = await RecipeItem.findByIdAndUpdate(
       id,
       {
-        requiredQuantity: Number(requiredQuantity),
+        requiredQuantity,
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!recipe) {
@@ -57,21 +54,14 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       data: recipe,
     });
   } catch (error) {
-    console.error("Recipe PATCH API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update recipe mapping",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Recipe update failed");
   }
 }
 
-export async function DELETE(_request: Request, { params }: RouteParams) {
+export async function DELETE(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
@@ -97,15 +87,6 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       message: "Recipe mapping deleted successfully",
     });
   } catch (error) {
-    console.error("Recipe DELETE API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to delete recipe mapping",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Recipe deletion failed");
   }
 }

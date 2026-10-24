@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import bcrypt from "bcryptjs";
 
 import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
+import { ApiError, apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { updateStaffSchema } from "@/validation/admin";
 
 type RouteParams = {
   params: Promise<{
@@ -12,25 +16,26 @@ type RouteParams = {
 
 export async function PATCH(request: Request, { params }: RouteParams) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const { id } = await params;
-    const body = await request.json();
+    const { name, email, password, role, status } = await parseJsonBody(
+      request,
+      updateStaffSchema
+    );
 
-    const { name, email, password, role, status } = body;
-
-    if (!name || !email || !role || !status) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Name, email, role and status are required",
-        },
-        { status: 400 }
+    if (id === auth.user.id && (role !== "ADMIN" || status !== "ACTIVE")) {
+      throw new ApiError(
+        400,
+        "You cannot remove your own active administrator access.",
+        "SELF_LOCKOUT_FORBIDDEN"
       );
     }
 
     const existingUser = await User.findOne({
-      email: email.toLowerCase().trim(),
+      email,
       _id: { $ne: id },
     });
 
@@ -52,27 +57,18 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       password?: string;
     } = {
       name,
-      email: email.toLowerCase().trim(),
+      email,
       role,
       status,
     };
 
-    if (password && password.trim().length > 0) {
-      if (password.length < 6) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Password must be at least 6 characters",
-          },
-          { status: 400 }
-        );
-      }
-
-      updateData.password = await bcrypt.hash(password, 10);
+    if (password) {
+      updateData.password = await bcrypt.hash(password, 12);
     }
 
     const updatedUser = await User.findByIdAndUpdate(id, updateData, {
       new: true,
+      runValidators: true,
     }).select("-password");
 
     if (!updatedUser) {
@@ -91,15 +87,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       data: updatedUser,
     });
   } catch (error) {
-    console.error("Staff PATCH API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to update staff member",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Staff update failed");
   }
 }

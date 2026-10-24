@@ -1,5 +1,6 @@
 import Link from "next/link";
 import mongoose from "mongoose";
+import { cookies } from "next/headers";
 
 import {
   ArrowLeft,
@@ -10,8 +11,8 @@ import {
 } from "lucide-react";
 
 import { connectDB } from "@/lib/mongodb";
+import { getCustomerOrder } from "@/application/orders/update-order";
 
-import Order from "@/models/Order";
 import Payment from "@/models/Payment";
 
 import "@/models/Table";
@@ -19,6 +20,10 @@ import "@/models/MenuItem";
 import "@/models/ComboOffer";
 
 import PrintReceiptButton from "@/components/cashier/PrintReceiptButton";
+import type {
+  PaymentDto,
+  PopulatedRestaurantOrderDto,
+} from "@/types/restaurant";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,7 +63,7 @@ function formatDateTime(
   }).format(date);
 }
 
-function getCustomerMenuUrl(order: any) {
+function getCustomerMenuUrl(order: PopulatedRestaurantOrderDto) {
   if (
     order.orderType === "TAKE_AWAY"
   ) {
@@ -75,7 +80,8 @@ function getCustomerMenuUrl(order: any) {
 }
 
 async function getReceiptData(
-  orderId: string
+  orderId: string,
+  token: string
 ) {
   await connectDB();
 
@@ -88,17 +94,14 @@ async function getReceiptData(
     };
   }
 
-  const [
-    orderDocument,
-    paymentDocument,
-  ] = await Promise.all([
-    Order.findById(orderId)
-      .populate("table")
-      .populate("items.menuItem")
-      .populate("comboItems.comboOffer")
-      .lean(),
+  let orderDocument;
+  try {
+    orderDocument = await getCustomerOrder(orderId, token);
+  } catch {
+    return { order: null, payment: null };
+  }
 
-    Payment.findOne({
+  const paymentDocument = await Payment.findOne({
       status: "PAID",
 
       $or: [
@@ -114,20 +117,19 @@ async function getReceiptData(
         paidAt: -1,
         createdAt: -1,
       })
-      .lean(),
-  ]);
+      .lean();
 
   return {
     order: orderDocument
       ? JSON.parse(
           JSON.stringify(orderDocument)
-        )
+        ) as PopulatedRestaurantOrderDto
       : null,
 
     payment: paymentDocument
       ? JSON.parse(
           JSON.stringify(paymentDocument)
-        )
+        ) as PaymentDto
       : null,
   };
 }
@@ -136,11 +138,13 @@ export default async function PublicReceiptPage({
   params,
 }: RouteParams) {
   const { orderId } = await params;
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(`order_access_${orderId}`)?.value ?? "";
 
   const {
     order,
     payment,
-  } = await getReceiptData(orderId);
+  } = await getReceiptData(orderId, accessToken);
 
   if (!order) {
     return (
@@ -354,7 +358,7 @@ export default async function PublicReceiptPage({
 
                 <tbody>
                   {order.items?.map(
-                    (item: any) => (
+                    (item) => (
                       <tr
                         key={item._id}
                         className="border-b border-neutral-100"
@@ -391,7 +395,7 @@ export default async function PublicReceiptPage({
                   )}
 
                   {order.comboItems?.map(
-                    (combo: any) => (
+                    (combo) => (
                       <tr
                         key={combo._id}
                         className="border-b border-neutral-100"
@@ -407,7 +411,7 @@ export default async function PublicReceiptPage({
                             .comboItemsSnapshot
                             ?.map(
                               (
-                                snapshot: any,
+                                snapshot,
                                 index: number
                               ) => (
                                 <p

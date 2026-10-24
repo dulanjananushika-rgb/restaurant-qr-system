@@ -63,8 +63,7 @@ export default function TakeawayQrGenerator({
     normalizedUrl.includes("localhost") ||
     normalizedUrl.includes("127.0.0.1");
 
-  const generateQrCode =
-    useCallback(async () => {
+  const generateQrCode = useCallback(async () => {
       setLoading(true);
       setError("");
       setCopied(false);
@@ -108,10 +107,13 @@ export default function TakeawayQrGenerator({
       } finally {
         setLoading(false);
       }
-    }, [normalizedUrl]);
+  }, [normalizedUrl, setCopied, setError, setLoading, setQrImage]);
 
   useEffect(() => {
-    void generateQrCode();
+    const timer = window.setTimeout(() => {
+      void generateQrCode();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [generateQrCode]);
 
   async function copyTakeawayUrl() {

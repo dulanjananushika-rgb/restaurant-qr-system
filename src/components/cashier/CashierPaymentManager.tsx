@@ -69,10 +69,15 @@ type ComboItem = {
   comboItemsSnapshot?: ComboSnapshotItem[];
 };
 
-type Order = {
+export type CashierOrder = {
   _id: string;
 
   table?: TableData | null;
+
+  diningSession?:
+    | string
+    | { _id: string }
+    | null;
 
   orderType:
     | "DINE_IN"
@@ -110,12 +115,12 @@ type Order = {
   createdAt: string;
 };
 
-type SessionBill = {
+export type CashierSessionBill = {
   diningSessionId: string;
 
   table?: TableData | null;
 
-  orders: Order[];
+  orders: CashierOrder[];
 
   totalAmount: number;
   allDelivered: boolean;
@@ -136,7 +141,7 @@ type DiningSessionReference =
       table?: TableData | null;
     };
 
-type Payment = {
+export type CashierPayment = {
   _id: string;
 
   order?: PaymentOrderReference | null;
@@ -247,7 +252,7 @@ function getReferenceId(
 }
 
 function getPaymentOrderCount(
-  payment: Payment
+  payment: CashierPayment
 ) {
   if (
     Array.isArray(payment.orders) &&
@@ -268,9 +273,9 @@ export default function CashierPaymentManager({
   singleOrders,
   payments,
 }: {
-  sessionBills: SessionBill[];
-  singleOrders: Order[];
-  payments: Payment[];
+  sessionBills: CashierSessionBill[];
+  singleOrders: CashierOrder[];
+  payments: CashierPayment[];
 }) {
   const router = useRouter();
 
@@ -517,7 +522,7 @@ export default function CashierPaymentManager({
   ========================= */
 
   function renderOrderItems(
-    order: Order
+    order: CashierOrder
   ) {
     const hasItems =
       Array.isArray(order.items) &&

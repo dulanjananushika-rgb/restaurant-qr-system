@@ -1,6 +1,13 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 import Link from "next/link";
+import Image from "next/image";
 import { Plus, Search, Utensils } from "lucide-react";
-import { getAppUrl } from "@/lib/appUrl";
+import { connectDB } from "@/lib/mongodb";
+import MenuItemModel from "@/models/MenuItem";
+import "@/models/Category";
 
 type Category = {
   _id: string;
@@ -19,22 +26,16 @@ type MenuItem = {
 };
 
 async function getMenuItems() {
-  const appUrl = getAppUrl();
-
-  const res = await fetch(`${appUrl}/api/admin/menu`, {
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch menu items");
-  }
-
-  return res.json();
+  await connectDB();
+  return MenuItemModel.find()
+    .sort({ createdAt: -1 })
+    .populate("category")
+    .lean();
 }
 
 export default async function AdminMenuPage() {
-  const result = await getMenuItems();
-  const menuItems: MenuItem[] = result?.data || [];
+  const menuDocuments = await getMenuItems();
+  const menuItems: MenuItem[] = JSON.parse(JSON.stringify(menuDocuments));
 
   const availableCount = menuItems.filter((item) => item.available).length;
   const unavailableCount = menuItems.filter((item) => !item.available).length;
@@ -111,9 +112,12 @@ export default async function AdminMenuPage() {
             >
               <div className="h-44 w-full bg-black/30">
                 {item.image ? (
-                  <img
+                  <Image
                     src={item.image}
                     alt={item.name}
+                    width={640}
+                    height={352}
+                    unoptimized
                     className="h-full w-full object-cover"
                   />
                 ) : (

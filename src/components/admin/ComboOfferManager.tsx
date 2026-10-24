@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -9,7 +11,6 @@ import {
   Plus,
   Save,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
 
@@ -351,9 +352,12 @@ export default function ComboOfferManager({
 
           {image ? (
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-              <img
+              <Image
                 src={image}
                 alt="Combo preview"
+                width={900}
+                height={432}
+                unoptimized
                 className="h-48 w-full object-cover"
               />
 
@@ -601,9 +605,12 @@ export default function ComboOfferManager({
               className="overflow-hidden rounded-[24px] border border-white/10 bg-black/20"
             >
               {combo.image && (
-                <img
+                <Image
                   src={combo.image}
                   alt={combo.name}
+                  width={900}
+                  height={396}
+                  unoptimized
                   className="h-44 w-full object-cover"
                 />
               )}

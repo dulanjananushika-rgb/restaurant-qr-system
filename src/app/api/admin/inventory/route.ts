@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import { revalidatePath } from "next/cache"; // ← Import කළා
 import InventoryItem from "@/models/InventoryItem";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { inventoryItemSchema } from "@/validation/admin";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const items = await InventoryItem.find().sort({ createdAt: -1 }).lean();
@@ -14,41 +20,26 @@ export async function GET() {
       data: items,
     });
   } catch (error) {
-    console.error("Inventory GET API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load inventory items",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Inventory list failed");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
-    const body = await request.json();
-    const { name, unit, quantity, minQuantity } = body;
-
-    if (!name) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Item name is required",
-        },
-        { status: 400 }
-      );
-    }
+    const { name, unit, quantity, minQuantity } = await parseJsonBody(
+      request,
+      inventoryItemSchema
+    );
 
     const item = await InventoryItem.create({
       name,
-      unit: unit || "kg",
-      quantity: Number(quantity) || 0,
-      minQuantity: Number(minQuantity) || 0,
+      unit,
+      quantity,
+      minQuantity,
     });
 
     // ==================== IMPORTANT FIX ====================
@@ -64,15 +55,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Inventory POST API error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to create inventory item",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Inventory item creation failed");
   }
 }

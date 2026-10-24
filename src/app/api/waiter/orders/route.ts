@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { connectDB } from "@/lib/mongodb";
 import { verifyToken } from "@/lib/auth";
+import { requireApiUser } from "@/lib/api/auth";
 
 import Order from "@/models/Order";
 import Table from "@/models/Table";
@@ -12,6 +13,9 @@ import "@/models/ComboOffer";
 
 export async function GET(request: NextRequest) {
   try {
+    const routeAuth = await requireApiUser(request, ["WAITER", "ADMIN"]);
+    if (!routeAuth.ok) return routeAuth.response;
+
     await connectDB();
 
     // Get the logged-in user's token

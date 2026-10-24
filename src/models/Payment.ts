@@ -139,9 +139,26 @@ PaymentSchema.index({
   paidAt: -1,
 });
 
+PaymentSchema.index(
+  { diningSession: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      diningSession: { $type: "objectId" },
+      status: "PAID",
+    },
+  }
+);
+
 PaymentSchema.index({
   order: 1,
   status: 1,
+}, {
+  unique: true,
+  partialFilterExpression: {
+    order: { $type: "objectId" },
+    status: "PAID",
+  },
 });
 
 PaymentSchema.index({

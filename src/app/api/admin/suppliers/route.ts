@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
+import { requireApiUser } from "@/lib/api/auth";
 import { connectDB } from "@/lib/mongodb";
 import { createAuditLog } from "@/lib/audit";
 
 import Supplier from "@/models/Supplier";
+import { apiErrorResponse } from "@/lib/api/errors";
+import { parseJsonBody } from "@/lib/api/validation";
+import { supplierSchema } from "@/validation/admin";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
 
     const suppliers = await Supplier.find().sort({ createdAt: -1 }).lean();
@@ -15,24 +21,15 @@ export async function GET() {
       data: suppliers,
     });
   } catch (error) {
-    console.error("Suppliers GET error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to load suppliers",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Supplier list failed");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireApiUser(request, ["ADMIN"]);
+    if (!auth.ok) return auth.response;
     await connectDB();
-
-    const body = await request.json();
 
     const {
       name,
@@ -41,37 +38,10 @@ export async function POST(request: Request) {
       email = "",
       address = "",
       status = "ACTIVE",
-    } = body as {
-      name: string;
-      contactPerson?: string;
-      phone?: string;
-      email?: string;
-      address?: string;
-      status?: "ACTIVE" | "INACTIVE";
-    };
-
-    if (!name || !name.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Supplier name is required",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!["ACTIVE", "INACTIVE"].includes(status)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid supplier status",
-        },
-        { status: 400 }
-      );
-    }
+    } = await parseJsonBody(request, supplierSchema);
 
     const existingSupplier = await Supplier.findOne({
-      name: name.trim(),
+      name,
     });
 
     if (existingSupplier) {
@@ -85,11 +55,11 @@ export async function POST(request: Request) {
     }
 
     const supplier = await Supplier.create({
-      name: name.trim(),
-      contactPerson: contactPerson.trim(),
-      phone: phone.trim(),
-      email: email.trim().toLowerCase(),
-      address: address.trim(),
+      name,
+      contactPerson,
+      phone,
+      email,
+      address,
       status,
     });
 
@@ -97,6 +67,7 @@ export async function POST(request: Request) {
       action: "SUPPLIER_CREATED",
       module: "SUPPLIERS",
       description: `Supplier "${supplier.name}" created.`,
+      performedBy: auth.user.email,
     });
 
     return NextResponse.json(
@@ -108,15 +79,6 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Suppliers POST error:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Failed to create supplier",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Supplier creation failed");
   }
 }

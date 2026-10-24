@@ -1,3 +1,7 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
 import { notFound } from "next/navigation";
 import { connectDB } from "@/lib/mongodb";
 import Category from "@/models/Category";

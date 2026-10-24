@@ -1,11 +1,7 @@
 import mongoose from "mongoose";
-console.log("Mongo URI exists:", !!process.env.MONGODB_URI);
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  throw new Error("Please add MONGODB_URI to .env.local");
-}
+mongoose.set("sanitizeFilter", true);
+mongoose.set("transactionAsyncLocalStorage", true);
 
 type CachedConnection = {
   conn: typeof mongoose | null;
@@ -30,8 +26,14 @@ export async function connectDB() {
     return cached.conn;
   }
 
+  const MONGODB_URI = process.env.MONGODB_URI;
+
+  if (!MONGODB_URI) {
+    throw new Error("Please add MONGODB_URI to .env.local");
+  }
+
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI as string, {
+    cached.promise = mongoose.connect(MONGODB_URI, {
       dbName: "restaurant_qr_system",
       bufferCommands: false,
     });
