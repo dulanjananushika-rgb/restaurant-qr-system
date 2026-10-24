@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 
-mongoose.set("sanitizeFilter", true);
 mongoose.set("transactionAsyncLocalStorage", true);
 
 type CachedConnection = {
